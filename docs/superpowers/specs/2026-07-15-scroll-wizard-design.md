@@ -107,9 +107,17 @@ Steps:
   stop). Node >= 20. Mode: `manual` (default) or `api` if gemini-media-mcp tools are
   detected in the session. If the target project dir already exists, run resume detection.
 - **1 — Intake** → `brief.md`. Brand name, vibe/palette, motion type (orbit / dolly /
-  reveal / macro / morph…), overlay copy — including which overlays are **stopped
-  scenes** (`hold`) and their placement (center/left/right) — outro copy + CTA, project
-  name, mode choice, frame budget (default 150). *Gate: approve the brief.*
+  reveal / macro / morph…), outro copy + CTA, project name, mode choice, frame budget
+  (default 150). Then the **stops questionnaire** — the wizard asks the user explicitly,
+  one question at a time (proposing defaults, e.g. 2–3 stops for a 400vh scrub):
+  1. **How many stops** (stopped scenes) the page should have — zero is fine.
+  2. **What each stop is for** — feature callout, product highlight, plain caption,
+     brand statement…
+  3. **Which product** (if any) each stop showcases, and the copy for it (title/body).
+  4. **Any clickable buttons** — per stop, an optional button label + destination URL
+     (buy page, spec sheet, signup…), plus placement (center/left/right).
+  Non-stop overlays (captions that ride over motion) are gathered the same way.
+  *Gate: approve the brief.*
 - **2 — Keyframes (skippable).** The agent proposes a keyframe plan suited to the motion
   type:
   - `first` only (default) — image-to-video seed; e.g. a dolly-in needs one strong opener.
@@ -196,7 +204,8 @@ Steps:
   "scrub":    { "heightVh": 400, "smoothing": 0.12 },
   "overlays": [
     { "at": [0.05, 0.25], "title": "…", "body": "…" },
-    { "at": [0.35, 0.55], "title": "…", "body": "…", "hold": true, "position": "left" }
+    { "at": [0.35, 0.55], "title": "…", "body": "…", "hold": true, "position": "left",
+      "cta": { "label": "…", "href": "…" } }
   ],
   "outro":    { "headline": "…", "body": "…", "cta": { "label": "…", "href": "#" } }
 }
@@ -215,6 +224,13 @@ monotonic. Overlay *opacity* is driven by raw scroll progress, so text appears w
 scene is stopped. `position` (`"center"` default, `"left"`, `"right"`) places the
 caption via CSS classes so callouts can sit beside the subject.
 
+**Overlay CTA**: any overlay (typically a hold) may carry `"cta": { "label", "href" }` —
+rendered as a clickable button inside the caption, same shape as `outro.cta`. Clickability
+requires the pointer-events split: the overlay layer is `pointer-events: none` (so
+scrolling over the canvas never snags), interactive elements inside it are
+`pointer-events: auto`. A stop with a product callout + buy button is the intended
+Apple-style use.
+
 ### scrub-core.js — pure, zero DOM, fully unit-tested
 
 | Function | Contract |
@@ -228,7 +244,7 @@ caption via CSS classes so callouts can sit beside the subject.
 | `canvasSize(cssW, cssH, dpr, maxDpr = 2)` | backing-store `{width, height}`, DPR capped |
 | `frameFilename(index, pattern)` | expands `{index:N}` token, 1-based zero-pad |
 | `overlayOpacity(progress, [start, end], fade)` | 0→1 ramp over `fade` at each edge, 1 inside, 0 outside; `fade` defaults to `min(0.05, (end−start)/2)` |
-| `validateConfig(obj)` | returns list of typed, human-readable errors; `[]` = valid. Includes hold rules: every `at` within `[0, 1]` with `start < end`; hold ranges must not overlap each other or cover the entire `[0, 1]` range |
+| `validateConfig(obj)` | returns list of typed, human-readable errors; `[]` = valid. Includes hold rules: every `at` within `[0, 1]` with `start < end`; hold ranges must not overlap each other or cover the entire `[0, 1]` range. CTA rule (overlay and outro alike): if present, `label` and `href` must be non-empty strings |
 
 ### scrub-engine.js — DOM glue, untested by design
 
@@ -243,9 +259,10 @@ Covered by the preview gate and integration file-level assertions, not unit test
 ### index.html / style.css
 
 Sticky full-viewport canvas inside a `scrub.heightVh`-tall section; overlay captions
-absolutely positioned, opacity driven by `overlayOpacity`; outro section (headline,
-body, CTA button) and minimal footer; theme colors applied from config as CSS custom
-properties. Loading strategy v1: preload-all + poster-first paint (progressive loading
+absolutely positioned (position classes: center/left/right), opacity driven by
+`overlayOpacity`, optional CTA button per overlay (pointer-events split per §above);
+outro section (headline, body, CTA button) and minimal footer; theme colors applied
+from config as CSS custom properties. Loading strategy v1: preload-all + poster-first paint (progressive loading
 is out of scope).
 
 ## 7. Testing strategy (TDD, red/green/refactor, small commits)
@@ -255,7 +272,7 @@ is out of scope).
     math, DPR caps, opacity ramps, pattern expansion, config validation errors;
     `applyHolds`: identity with no holds, exact plateau across each hold, continuity at
     hold boundaries, monotonicity, 0→0 / 1→1, multiple holds, and validation rejection
-    of overlapping/out-of-range holds;
+    of overlapping/out-of-range holds and malformed CTAs (missing/empty label or href);
   - `videoVerdict` / `imageVerdict` fed canned ffprobe JSON (valid, warning-laden,
     garbage);
   - `extract-frames` arg parsing, `framePlan` (exact count, even spacing, midpoint
