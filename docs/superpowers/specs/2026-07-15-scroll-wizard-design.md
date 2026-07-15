@@ -107,8 +107,9 @@ Steps:
   stop). Node >= 20. Mode: `manual` (default) or `api` if gemini-media-mcp tools are
   detected in the session. If the target project dir already exists, run resume detection.
 - **1 — Intake** → `brief.md`. Brand name, vibe/palette, motion type (orbit / dolly /
-  reveal / macro / morph / journey-flythrough…), outro copy + CTA, project name, mode
-  choice, frame budget (default 150). The wizard first establishes the **register**
+  reveal / macro / morph / journey-flythrough / exploded-teardown / light-sweep /
+  scale-travel / peel-back…), outro copy + CTA, project name, mode choice, frame budget
+  (default 150). The wizard first establishes the **register**
   (§9): product scrub or journey — it shapes every default that follows. Then the **stops questionnaire** — the wizard asks the user explicitly,
   one question at a time (proposing defaults, e.g. 2–3 stops for a 400vh scrub):
   1. **How many stops** (stopped scenes) the page should have — zero is fine.
@@ -364,12 +365,19 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
   - **Product scrub (Apple register)** — one hero subject, camera orbits/dollies/reveals
     around it; stops are feature callouts beside the subject; UI whisper-quiet, type-led;
     outro CTA is the purchase/signup moment. Keyframe default: `first` (+ `last` for
-    orbit/reveal endpoints).
+    orbit/reveal endpoints). Strong variants: **exploded-teardown** (Ray-Ban Meta — the
+    product decomposes into labeled components as you scroll, still one continuous take),
+    **peel-back** (AVATR — layers strip away, exterior to interior), **light-sweep**
+    (Chanel J12 — camera near-still while light travels across the material; the light
+    is the motion).
   - **Journey (Zipline register)** — the camera *travels* (fly-through, descent, route);
     stops are waypoints in a story, often data/stat callouts ("2 g CO₂ per delivery"),
     with scale shifts (macro ↔ aerial) as the drama; outro lands the destination.
     Keyframe default: `first` + `last` (origin and destination are the narrative), stops
-    planned as waypoints at intake.
+    planned as waypoints at intake. Strong variants: **scale-travel** (Chizzy — one
+    continuous zoom from cosmic to subatomic; iCoMat — factory floor to fiber), and
+    **world-as-brand** (Igloo.inc — the journey traverses a built world that *is* the
+    brand identity).
   These are registers to reason from, not sites to copy — palette and type still derive
   from this brief's own scene (§6).
 - **Mood vocabulary for the art-direction pass** — internal reference points for the
@@ -379,14 +387,22 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
   - *Glossy object-world* (Nothin', noth.in) — playful tactile 3D materials (foil,
     balloon, candy-wrap), bold statement type with generous spacing; suits expressive
     briefs where the subject IS a rendered object.
-  - *Engineer minimal* (haoqi.design) — monochrome + one selective accent, utility
-    type, ambient metadata as texture (coordinates, timestamps, frame counter) — the
-    frame counter is already honest data the scrub engine has.
-  - *Configurator stop* (Tesla) — a stopped scene treated as a spec panel: product
-    centered, side panel with `stats` rows and a decisive CTA.
+  - *Engineer minimal* (haoqi.design; wireframe extension: Terminal Industries) —
+    monochrome + one selective accent, utility type, ambient metadata as texture
+    (coordinates, timestamps, frame counter — the frame counter is already honest data
+    the scrub engine has); blueprint/wireframe texture for deep-tech briefs.
+  - *Configurator stop* (Tesla; Scout Motors) — a stopped scene treated as a spec
+    panel: product centered, side panel with `stats` rows and a decisive CTA;
+    immersion that accelerates the purchase decision instead of delaying it.
   - *Cinematic story* (Valentime by Noomo) — scroll as film: narrative chapters with
     emotional pacing, elegant restrained type over atmospheric scenes, whitespace as
     drama; suits journey-register briefs that are stories rather than data.
+  - *Luxury material* (Chanel J12, Cartier Watches & Wonders) — the material is the
+    protagonist: light on ceramic, jewel detailing; serif elegance, deep dark field,
+    very few words; pairs naturally with the light-sweep motion type.
+  - *Soft editorial* (Microsoft.ai) — the warm counterpoint: paper tones, organic
+    texture, humanist type, journal-like rhythm; for briefs that should feel human and
+    calm rather than dark and technical.
   **Guardrail — no explicit borrowing without a strong match.** This vocabulary is for
   the agent's private reasoning. The vibe question stays open-ended; the agent matches
   the user's answers against the vocabulary silently, and only surfaces or applies a
@@ -394,15 +410,19 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
   evokes it, or they name the site/brand themselves. Default is always direction
   derived from this brief's copy and this scene's frames; a matched mood is a starting
   point to blend, never a costume. The stops questionnaire offers `stats` whenever a
-  stop is a product highlight or waypoint (that's a feature, not a look).
+  stop is a product highlight or waypoint (that's a feature, not a look). The
+  art-direction pass also steers *away* from the stock AI-generated looks (near-black
+  field + single acid accent; warm cream + terracotta serif; broadsheet hairlines)
+  unless the brief itself asks for one — deriving from the frames is the antidote.
 - **One continuous shot, no cuts** — a scene cut destroys the scrub illusion; this is
   the single most important constraint and appears in every video prompt.
 - Slow, constant-velocity camera motion matched to the brief's motion type; 6–8 s
   duration target; no on-screen text (overlays are the site's job); high-detail static
   subject, moving camera (or slow subject morph) rather than fast action.
 - Keyframe-plan heuristics per motion type (dolly → `first`; orbit/reveal → `first`+`last`;
-  product consistency → `ref` set), and image prompts specify 16:9, no text, no
-  watermarks, consistent palette drawn from the brief.
+  exploded-teardown → `first` assembled + `last` exploded; scale-travel → `first` wide +
+  `last` close; product consistency → `ref` set), and image prompts specify 16:9, no
+  text, no watermarks, consistent palette drawn from the brief.
 - When the brief includes stopped scenes, the video prompt asks for composed "beats" —
   moments mid-motion where the framing reads well as a held still (subject fully in
   frame, no motion blur) — so hold plateaus land on frames worth stopping on.
