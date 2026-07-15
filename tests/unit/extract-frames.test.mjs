@@ -3,6 +3,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   rmdir,
   writeFile,
@@ -618,6 +619,60 @@ describe('frame extraction CLI', () => {
     expect(removeEmptyDirectory).toHaveBeenCalledWith(outDir);
     await expect(readFile(join(outDir, 'recreated.txt'), 'utf8')).resolves.toBe('keep');
     expect(await readdir(outDir)).toEqual(['recreated.txt']);
+  });
+
+  it('restores an initially empty output when promotion fails after removal', async () => {
+    const root = await temporaryRoot('scroll-wizard-extract-');
+    const input = join(root, 'input.mp4');
+    const outDir = join(root, 'frames');
+    await writeFile(input, 'video');
+    await mkdir(outDir);
+    const runner = fakeExtractionRunner({ input, count: 1 });
+    const promotionError = new Error('promotion failed');
+    const renamePath = vi.fn(async (source, destination) => {
+      if (destination === outDir) throw promotionError;
+      return rename(source, destination);
+    });
+    const io = fakeIo();
+
+    expect(await main(
+      [input, outDir, '--count', '1'],
+      io,
+      runner,
+      { replacementOperations: { rename: renamePath } },
+    )).toBe(2);
+
+    expect(await readdir(outDir)).toEqual([]);
+    expect(await readdir(root)).toEqual(['frames', 'input.mp4']);
+    expect(io.error.mock.calls.at(-1)[0]).toContain('promotion failed');
+  });
+
+  it('composes promotion and empty-target restoration failures', async () => {
+    const root = await temporaryRoot('scroll-wizard-extract-');
+    const input = join(root, 'input.mp4');
+    const outDir = join(root, 'frames');
+    await writeFile(input, 'video');
+    await mkdir(outDir);
+    const runner = fakeExtractionRunner({ input, count: 1 });
+    const promotionError = new Error('promotion failed');
+    const restoreError = Object.assign(new Error('restore denied'), { code: 'EACCES' });
+    const io = fakeIo();
+
+    expect(await main(
+      [input, outDir, '--count', '1'],
+      io,
+      runner,
+      {
+        replacementOperations: {
+          rename: vi.fn().mockRejectedValue(promotionError),
+        },
+        restoreEmptyDirectory: vi.fn().mockRejectedValue(restoreError),
+      },
+    )).toBe(2);
+
+    expect(await readdir(root)).toEqual(['input.mp4']);
+    expect(io.error.mock.calls.at(-1)[0]).toContain('promotion failed');
+    expect(io.error.mock.calls.at(-1)[0]).toContain('restore denied');
   });
 
   it('returns success and warns with the preserved backup path on cleanup failure', async () => {

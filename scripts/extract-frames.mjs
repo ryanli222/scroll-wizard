@@ -223,6 +223,7 @@ export async function main(
   );
   let replacement;
   let summary;
+  let removedEmptyTarget = false;
   try {
     await mkdir(parent, { recursive: true });
     await mkdir(prepared);
@@ -240,6 +241,7 @@ export async function main(
       const removeEmptyDirectory = fileOperations.removeEmptyDirectory ?? rmdir;
       try {
         await removeEmptyDirectory(target);
+        removedEmptyTarget = true;
       } catch (error) {
         if (error?.code !== 'ENOENT') throw error;
       }
@@ -251,7 +253,22 @@ export async function main(
       fileOperations.replacementOperations,
     );
   } catch (error) {
-    io.error('Extraction failed: ' + firstLine(error));
+    let reportedError = error;
+    if (removedEmptyTarget) {
+      const restoreEmptyDirectory = fileOperations.restoreEmptyDirectory ?? mkdir;
+      try {
+        await restoreEmptyDirectory(target);
+      } catch (restoreError) {
+        if (restoreError?.code !== 'EEXIST') {
+          reportedError = new AggregateError(
+            [error, restoreError],
+            firstLine(error)
+            + '; empty output restoration failed: ' + firstLine(restoreError),
+          );
+        }
+      }
+    }
+    io.error('Extraction failed: ' + firstLine(reportedError));
     return 2;
   } finally {
     await rm(prepared, { recursive: true, force: true });
