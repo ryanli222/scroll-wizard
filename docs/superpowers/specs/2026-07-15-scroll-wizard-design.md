@@ -49,10 +49,12 @@ Two-layer architecture, strictly separated:
   - Codex: `~/.agents/skills/scroll-wizard` → repo
   - Grok Build: `~/.grok/skills/scroll-wizard` → repo
 - **npm-ready, not npm-published**: `package.json` declares `bin` entries
-  (`scroll-wizard-validate`, `scroll-wizard-extract`, `scroll-wizard-scaffold`) and a
-  `files` whitelist (`scripts/`, `template/`, `SKILL.md`). Publishing is a later task.
-- **Dependencies**: zero runtime deps (webp encoding is done by ffmpeg itself). Dev deps:
-  vitest only. Node >= 20. ffmpeg/ffprobe are external prerequisites, checked at preflight.
+  (`scroll-wizard-validate`, `scroll-wizard-extract`, `scroll-wizard-scaffold`,
+  `scroll-wizard-status`) and a `files` whitelist (`scripts/`, `template/`,
+  `SKILL.md`). Publishing is a later task.
+- **Dependencies**: zero runtime deps (webp encoding is done by ffmpeg itself). Dev
+  deps: vitest + Playwright (smoke suite only). Node >= 20. ffmpeg/ffprobe are external
+  prerequisites, checked at preflight.
 - Scripts export their pure functions and detect direct CLI invocation, so vitest imports
   them without spawning processes.
 
@@ -64,11 +66,13 @@ The wizard creates `<cwd>/<project-name>/` where invoked:
 <project>/
   brief.md                  # step 1 artifact: brand, vibe, motion type, copy
   README.md                 # exact rerun commands (reproducibility without the skill)
-  prompts/
-    keyframe-first.txt      # paste-ready Flow prompts, one file per image
-    keyframe-last.txt       # (only the files the keyframe plan calls for)
-    ref-1.txt .. ref-3.txt
-    video.txt               # Veo 3.1 prompt; revisions saved as video-v2.txt, never overwritten
+  prompts/                  # ACTIVE prompts only, stable names = the plan record
+    keyframe-first.txt      # roles: first, last, ref-1..ref-3 — all match keyframe-*
+    keyframe-last.txt
+    keyframe-ref-1.txt
+    video.txt               # the active Veo 3.1 prompt
+    history/                # superseded revisions move here (video-v1.txt, …);
+                            # the active file is always unambiguous
   input/
     keyframes/first.png|jpg # role names are the wizard's output; user drops any names
     video.mp4               # the generated clip (any mp4/mov in input/ is accepted)
@@ -84,13 +88,30 @@ The wizard creates `<cwd>/<project-name>/` where invoked:
 **Resume = filesystem + approval receipts, with staleness rules.** Artifacts alone
 cannot prove a *gate* happened — they're written before approval is requested, so a
 crashed session would otherwise resume past gates nobody passed. The one piece of true
-state is therefore `approvals.json`: a receipt per gated step, `{step, sha256 of the
-gated artifact, timestamp}`, written by `status.mjs --approve <step>` which the wizard
-runs **only after the user's explicit approval**. Hash-tying makes receipts
-self-invalidating: edit `brief.md` after approving it and the receipt no longer
-matches. Resume is computed by a pure, unit-tested function `resolveResume(inventory)`
-over `{path, exists, mtime}` entries, the keyframe plan, and the receipts, returning
-`{resumeStep, staleness[], incomplete[], unapproved[]}`:
+state is therefore `approvals.json`, and its unit is the **gate manifest**, not a
+single file hash — several gates approve compound state (a keyframe *set*, frames +
+hold/poster decisions, theme tokens, the whole preview). Two rules make receipts
+well-defined:
+
+1. **Persist before approving.** Every decision a gate covers is written to disk
+   *before* approval is requested — `values.json` grows progressively (intake writes
+   copy/stops; the extraction gate writes nudged holds + `posterIndex`; the theme gate
+   writes `theme`). No gate ever approves in-memory state.
+2. **Receipt = manifest hash + upstream chain.** `status.mjs --approve <step>` builds
+   the gate's canonical manifest — sorted `{path, sha256}` for every file the gate
+   covers (brief: `brief.md`; keyframes: active prompts + images; video: the mp4;
+   extraction: frames dir + `values.json`; theme: `values.json`; preview:
+   `site/config.json` + frames) — and records `{step, manifestHash, basedOn:
+   upstreamManifestHash, timestamp}`. Validity requires the whole chain to match:
+   **re-approving an edited brief automatically invalidates every descendant receipt**
+   (keyframes, video, …), which then read "needs re-review" — the wizard re-asks those
+   gates; it never silently re-does money steps.
+
+The wizard runs `--approve` **only after the user's explicit approval**. Resume is
+computed by a pure, unit-tested function `resolveResume(inventory)` over
+`{path, exists, mtime, sha256}` entries, the keyframe plan, and the receipts,
+returning `{resumeStep, staleness[], incomplete[], unapproved[]}` (hashes verify
+receipts; mtimes remain the cheap ordering signal for ungated derivations):
 
 | Signal | Meaning |
 |--------|---------|
@@ -116,7 +137,9 @@ Iron rules, stated bluntly at the top of SKILL.md and repeated per step:
 1. **Never pass a hard gate without the user's explicit approval.** Show the artifact,
    ask, wait. On approval, record the receipt (`status.mjs --approve <step>`) so resume
    can trust it; a gate with no receipt is a gate that never happened. "Redo" loops the
-   step with the user's feedback; revised prompts get `-v2`, `-v3` suffixes.
+   step with the user's feedback; the superseded prompt moves to `prompts/history/`
+   and the revision takes the stable active filename — the active plan is never
+   ambiguous.
 2. **Never spend money without approval of the exact prompt** (API mode).
 3. **Never hand-edit or regenerate the template files** — configuration happens only
    through `config.json` values.
@@ -215,23 +238,23 @@ Steps:
   mid-morph ugliness, and whether a scene chip's text stays legible over that frame.
   A bad freeze gets fixed by *nudging the hold range* a few frames (a free config
   change), never by regenerating. The agent also proposes the **poster**: the
-  strongest still it saw (often mid-clip for orbits), default frame 1.
-  *Gate (light): approve payload, quality, hold frames, poster.*
+  strongest still it saw (often mid-clip for orbits), default frame 1. Nudged holds
+  and `posterIndex` are **written into `values.json` before the gate asks** (persist
+  before approving, §3). *Gate (light): approve payload, quality, hold frames, poster.*
 - **5 — Site build.** Starts with an **art-direction pass**: the agent views 2–3
   extracted frames and derives the theme *from the actual scene* — palette sampled from
   the imagery (bg from the scene's darks, accent from its most saturated material,
   `surface` as a translucent scene-dark), material mood → `radius` and font stacks,
   per §6's UI-in-the-scene rules. This is what keeps buttons and captions on-theme with
-  the 3D world instead of generic UI. The tokens + one line of rationale each (traced
-  to the frames) are shown **before anything is built** — theme is subjective and
-  costs seconds to iterate, so it gets its own stop. *Gate (light): approve or tweak
-  the theme tokens.* Then the agent writes the creative-values JSON (brief copy +
-  derived theme + `posterIndex`) and runs `scaffold-site.mjs <project> --config
-  values.json`: copies the template verbatim, **installs** `<project>/frames/` as
-  `site/frames/` (atomic same-volume rename, replacing any previous set — §5), derives
-  the `frames` block from
-  what is actually on disk (single source of truth), merges, validates (§6 severity
-  rules), writes `site/config.json` and the project README.
+  the 3D world instead of generic UI. The derived `theme` is **written into
+  `values.json` first** (persist before approving, §3), then the tokens + one line of
+  rationale each (traced to the frames) are shown — theme is subjective and costs
+  seconds to iterate, so it gets its own stop. *Gate (light): approve or tweak the
+  theme tokens.* Then `scaffold-site.mjs <project> --config values.json` runs the
+  transaction (§5): assembles a complete validated site in `site.tmp/` — template
+  copy, frames installed (replacing any previous set), `frames` block derived from
+  disk (single source of truth), config validated under §6 severity rules — and
+  atomically swaps it live, writing the project README.
 - **6 — Preview.** Any static server; documented default `npx serve site`. The
   check-list the agent hands the user: scrub smoothness, overlay timing, each stop's
   feel, mobile viewport, and a **throttled reload** (DevTools → Slow 4G) so load
@@ -272,15 +295,23 @@ Steps:
   is exact count, even sampling, correct naming.
 
 ### scaffold-site.mjs `<projectDir> --config <values.json> [--force]`
-- Copies `template/` → `<projectDir>/site/` (existing template-owned files require
-  `--force`; re-scaffolding for a theme/copy tweak is the expected loop).
+- **Transactional: the live `site/` is only ever replaced by a complete, validated
+  site.** Scaffold assembles `site.tmp/` — template copy, frames moved in, config
+  derived and validated, README staged — and only after *everything* succeeds swaps it
+  into place (`site` → `site.old` → `site.tmp` → `site`, then delete `site.old`). Any
+  failure before the swap rolls back cleanly: frames move back to
+  `<projectDir>/frames/`, `site/` and its old config remain exactly as they were. New
+  frames paired with an old config is a state that cannot exist. (`--force` still
+  gates replacing an existing site; re-scaffolding for a theme/copy tweak is the
+  expected loop.)
 - Frames install rule: if `<projectDir>/frames/` exists (fresh or re-extraction), it
-  **becomes** `site/frames/` via atomic swap — same-volume renames, zero copy, and any
-  previous `site/frames/` is replaced wholesale (it's regenerable from the mp4), with a
-  printed notice. Only when no project-level `frames/` exists is an existing
-  `site/frames/` left untouched (theme/copy-only re-scaffold). Neither present →
-  clear error (extraction comes first). Re-extracted frames can therefore never be
-  silently shadowed by the old published set.
+  is moved into the new site (same-volume renames, zero copy) and replaces any
+  previous set wholesale (regenerable from the mp4), with a printed notice. Only when
+  no project-level `frames/` exists does the new site inherit the existing
+  `site/frames/` (theme/copy-only re-scaffold — inherited by rename into `site.tmp/`
+  before the swap). Neither present → clear error (extraction comes first).
+  Re-extracted frames can therefore never be silently shadowed by the old published
+  set.
 - Derives `frames.count` and `frames.pattern` from disk, **validating the set is
   contiguous `1..N` in a single format** — gaps or mixed extensions are a blocking
   error naming the fix (re-run extraction). `frames.poster` comes from the creative
@@ -297,7 +328,8 @@ Steps:
   the recommended resume step — the deterministic backbone of §3's resume rules, so
   the wizard runs a script instead of doing ad-hoc mtime math (and standalone users
   get a status command for free).
-- `--approve <step>`: hashes the step's gated artifact and writes the receipt into
+- `--approve <step>`: builds the gate's canonical manifest (sorted file hashes per §3),
+  links it to the upstream gate's manifest hash, and writes the receipt into
   `approvals.json`. The wizard invokes this **only after** the user's explicit
   approval; it is the only writer of receipts.
 - Core is the pure `resolveResume(inventory)` (inventory = paths + mtimes + keyframe
@@ -404,19 +436,29 @@ callouts, Zipline waypoint data).
 | `overlayOpacity(progress, [start, end], fade)` | 0→1 ramp over `fade` at each edge, 1 inside, 0 outside; `fade` defaults to `min(0.05, (end−start)/2)` |
 | `holdFrames(holds, frameCount)` | the exact frame index each hold freezes on (its plateau's effective progress through `progressToFrame`) — drives the step-4 hold-frame review |
 | `recommendHeightVh(baseVh, holds)` | grows the page so motion pace stays constant. Scrollable distance is `height − 100vh` (the sticky viewport doesn't scrub), so: `100 + (baseVh − 100) / (1 − Σ hold spans)` — e.g. 400vh with 50% holds → 700vh, not 600. Also returns the between-stops speed-up factor for display |
+| `decodeWindow(targetIndex, n, frameCount, direction)` | the set of frame indices that should hold decoded bitmaps: current ± n, biased toward scroll `direction`, clamped to `[0, count−1]` — the memory bound of the engine |
 | `contrastRatio(colorA, colorB)` | WCAG 2.x relative-luminance contrast ratio (1–21), with rgba-over-bg compositing helper for `surface` |
 | `validateConfig(obj)` | returns `{ errors, warnings }`, both typed and human-readable; valid = no errors. **Errors:** every `at` within `[0, 1]` with `start < end`; hold ranges non-overlapping and not covering all of `[0, 1]`; CTA (overlay and outro) if present needs non-empty `label` and an `href` whose scheme is allowed — `https:`, `http:`, `mailto:`, `tel:`, relative paths, or `#anchors`; `javascript:` and unknown schemes are errors; `stats` entries need non-empty `value` and `label`; theme colors parse as hex/rgba; `radius` non-negative; `surface` alpha ≥ 0.45; `fonts.displayFile` if present must be a normalized relative path of the form `fonts/<name>.woff2` — no URLs, no `..`, nothing outside `site/fonts/` (self-contained contract); AA (4.5:1) on `text`/`bg` and on CTA label / `surface`-composited-over-`bg`. **Warnings:** total frames outside 24–400; `displayFile` named but missing on disk (scaffold-side check; engine falls back to the stack) |
 
-### scrub-engine.js — DOM glue, untested by design
+### scrub-engine.js — DOM glue, covered by the browser smoke suite
 
 Fetches `config.json` (fails loudly on `validateConfig` errors, console-warns on
-warnings). Loading: the **poster frame loads first and paints immediately** (LCP is the
-chosen strong frame, not whatever frame 1 is), then the rest preload behind a quiet
-progress indicator — and **the page is scrollable the whole time**: copy, overlays, and
-outro are live while the canvas holds the poster, so a slow connection delays the
-scrub, never the site. rAF loop redraws only when the smoothed frame index changes;
-ResizeObserver + DPR handling; Lenis initialized if `lenis.js` is present; registers
-`fonts.displayFile` via the FontFace API when set. Frame index is computed from
+warnings). Loading: the poster is a **real `<img>` element** layered with the canvas —
+canvas paints are not LCP candidates per the LCP processing model, so the `<img>` is
+what makes the chosen strong frame the actual LCP (and it carries the alt text). It
+loads first and fades out once the canvas takes over; the remaining frames preload
+behind a quiet progress indicator — and **the page is scrollable the whole time**:
+copy, overlays, and outro are live while the poster holds, so a slow connection delays
+the scrub, never the site. **Memory is bounded**: preloading holds compressed bytes
+only (the payload budget); decoded bitmaps live in a window of current ± N frames
+(`decodeWindow` below, N ≈ 12), created via `createImageBitmap` prioritized toward the
+lerp target and `close()`d on exit — never 150 × 1600 × 900 × 4 bytes of decoded RGBA
+at once. Draws fall back to the compressed `Image` when a bitmap isn't ready (one-time
+jank beats memory death); a frame that *fails to load* is skipped — the engine keeps
+rendering the nearest loaded frame and console-warns once. rAF loop redraws only when
+the smoothed frame index changes; ResizeObserver + DPR handling; Lenis initialized if
+`lenis.js` is present; registers `fonts.displayFile` via the FontFace API when set.
+Frame index is computed from
 `applyHolds(rawProgress, holdRanges)`; overlay opacity from raw progress — that
 ordering is what makes text land while the scene stands still. **Invisible means
 inoperable:** when an overlay's opacity falls below ~0.05 the engine sets `inert` on
@@ -430,7 +472,8 @@ payload saved), renders the poster as a fixed hero, and the template lays the ov
 out as ordinary stacked sections flowing into the outro — the content without the
 motion, which is what that preference is asking for.
 
-Covered by the preview gate and integration file-level assertions, not unit tests.
+Pure logic (windowing, mapping) lives in `scrub-core.js` under unit tests; the DOM
+behavior is exercised by the browser smoke suite (§7) plus the preview gate.
 
 ### index.html / style.css
 
@@ -455,22 +498,27 @@ is out of scope).
     compositing, and `validateConfig` **erroring** on an AA-failing theme and on
     `surface` alpha < 0.45;
     `holdFrames`: freeze-frame indices for zero/one/many holds, edges;
+    `decodeWindow`: window contents at start/middle/end of range, direction bias,
+    window ⊆ `[0, count−1]`, n ≥ count degenerates to all frames;
     `recommendHeightVh`: no holds = base; 400vh with 50% holds = 700vh; speed-up factor;
     href scheme allowlist (`javascript:` rejected, relative/`#`/`mailto:` accepted) and
     `displayFile` path rules (URL and `..` traversal rejected);
   - `resolveResume` with synthetic inventories: fresh chain with matching receipts
-    (done), artifact present but receipt missing or hash-mismatched (resume at that
-    gate), missing plan role (incomplete), video newer than frames (stale), project
-    frames newer than site frames (site build stale), brief newer than config (stale),
-    keyframes newer than video (report-only);
+    (done), artifact present but receipt missing or manifest-mismatched (resume at
+    that gate), **upstream re-approval invalidating every descendant receipt** (chain
+    break → those gates read "needs re-review"), missing plan role (incomplete), video
+    newer than frames (stale), project frames newer than site frames (site build
+    stale), brief newer than config (stale), keyframes newer than video (report-only);
   - `videoVerdict` / `imageVerdict` fed canned ffprobe JSON (valid, warning-laden,
     garbage);
   - `extract-frames` arg parsing, `framePlan` (exact count, even spacing, midpoint
     offsets), budget summary + 4G load-estimate math;
   - `scaffold-site` config merge, frames-block derivation (contiguity + single-format
     validation: gaps and mixed extensions are blocking errors), frames install/replace
-    semantics (fresh move; atomic replace when both dirs exist), and `posterIndex`
-    range validation (against a temp dir);
+    semantics (fresh move; atomic replace when both dirs exist), `posterIndex` range
+    validation, and **transaction rollback**: an induced validation failure leaves
+    `site/`, its old config, and `<project>/frames/` exactly as they were (against a
+    temp dir);
   - `extract-frames` `--force` swap semantics: rerun with a different count/format
     leaves exactly the new set, no stale tail.
 - **Integration (requires ffmpeg; suite self-skips with a clear message when absent):**
@@ -490,6 +538,14 @@ is out of scope).
      the fixture mp4 to be newer than `site/frames/` → extraction reported stale.
   7. Re-extract `--count 12 --format jpg` + re-scaffold → `site/frames/` holds exactly
      12 jpgs, config says 12, old webps gone.
+- **Browser smoke suite (Playwright + Chromium; self-skips with a clear message when
+  browsers aren't installed):** one spec file against the integration-built site
+  served locally. Asserts: poster `<img>` visible before frames finish; scrolling
+  changes rendered canvas pixels; a hidden overlay is `inert` while a visible
+  overlay's CTA is keyboard-focusable; `prefers-reduced-motion` emulation yields the
+  static layout and requests no frame images; deleting one frame file still renders
+  (nearest-loaded fallback, single console warning). Deliberately one file, a handful
+  of assertions — a smoke test for the riskiest runtime behavior, not an E2E matrix.
 - **Template/scripts are written once and tested** — the skill copies and configures
   them per project, never regenerates them. Tests import the actual shipped files
   (`template/scrub-core.js`, script exports), not copies.
@@ -596,7 +652,7 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
 | Non-empty extraction outDir | Refuse without `--force` |
 | MCP unavailable/fails in api mode | Fall back to manual with the same prompt file |
 | Invalid merged config | `scaffold-site` exits nonzero listing `validateConfig` errors |
-| Gate rejection | Loop step with feedback; new prompt files suffixed `-v2`, `-v3` |
+| Gate rejection | Loop step with feedback; superseded prompt → `prompts/history/`, revision takes the active name |
 | count > 9999 or < 1 | Arg validation error (pattern is 4-padded) |
 
 ## 11. Out of scope (v1)
@@ -604,10 +660,11 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
 Progressive/adaptive frame loading, multi-resolution frame sets, multiple template
 themes (one template, config-themed), AVIF, deploy automation, custom preview server,
 state files, npm publishing (layout ready only), Codex `openai.yaml` metadata,
-browser-based E2E tests, webfont fetching/subsetting (one user-supplied local `.woff2`
-IS supported), image slots in overlays (the video is the product shot), ambient audio /
-sound toggle (a Valentime signature, but out of scope), mechanical API spend-lock (a
-wrapper owning MCP generation calls — gates are instruction-enforced in v1).
+cross-browser test matrix (the single Chromium smoke suite IS in scope), webfont
+fetching/subsetting (one user-supplied local `.woff2` IS supported), image slots in
+overlays (the video is the product shot), ambient audio / sound toggle (a Valentime
+signature, but out of scope), mechanical API spend-lock (a wrapper owning MCP
+generation calls — gates are instruction-enforced in v1).
 
 ## 12. Deferred to implementation plan
 
