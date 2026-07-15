@@ -4,7 +4,6 @@ import { extname, join, parse } from 'node:path';
 import { hasFlag, isDirect, valueAfter } from './lib/cli.mjs';
 import {
   canonicalJson,
-  listFilesRecursive,
   pathExists,
   sha256File,
   sha256Text,
@@ -33,10 +32,30 @@ export function valuesProjection(values, gate) {
   throw new Error('No values projection for gate: ' + gate);
 }
 
+function compareCodePoints(left, right) {
+  const leftPoints = left[Symbol.iterator]();
+  const rightPoints = right[Symbol.iterator]();
+  while (true) {
+    const leftPoint = leftPoints.next();
+    const rightPoint = rightPoints.next();
+    if (leftPoint.done || rightPoint.done) {
+      if (leftPoint.done && rightPoint.done) return 0;
+      return leftPoint.done ? -1 : 1;
+    }
+    const leftValue = leftPoint.value.codePointAt(0);
+    const rightValue = rightPoint.value.codePointAt(0);
+    if (leftValue !== rightValue) return leftValue < rightValue ? -1 : 1;
+  }
+}
+
+function compareManifestPaths(left, right) {
+  return compareCodePoints(left.path, right.path);
+}
+
 export function manifestHash(entries) {
   const normalized = [...entries]
     .map(({ path, sha256 }) => ({ path, sha256 }))
-    .sort((left, right) => left.path.localeCompare(right.path));
+    .sort(compareManifestPaths);
   return sha256Text(canonicalJson(normalized));
 }
 
@@ -52,24 +71,44 @@ function logicalPath(...parts) {
 }
 
 function sortManifestEntries(entries) {
-  return entries.sort((left, right) => left.path.localeCompare(right.path));
+  return entries.sort(compareManifestPaths);
 }
 
-async function regularFilesRecursive(root) {
-  if (!await pathExists(root)) return [];
-  const candidates = await listFilesRecursive(root);
-  const inspected = await Promise.all(candidates.map(async (file) => ({
-    ...file,
-    regular: (await lstat(file.absolutePath)).isFile(),
-  })));
-  return inspected
-    .filter(({ regular }) => regular)
-    .map(({ regular: _regular, ...file }) => file);
+async function regularDirectoryExists(path, inspect = lstat) {
+  if (!await pathExists(path, inspect)) return false;
+  return (await inspect(path)).isDirectory();
 }
 
-async function manifestFile(path, logical) {
-  if (!await pathExists(path)) return null;
-  if (!(await lstat(path)).isFile()) return null;
+async function regularFilesRecursive(root, inspect = lstat) {
+  if (!await regularDirectoryExists(root, inspect)) return [];
+  const files = [];
+
+  async function walk(directory, relativeDirectory) {
+    const entries = await readdir(directory, { withFileTypes: true });
+    entries.sort((left, right) => compareCodePoints(left.name, right.name));
+    for (const entry of entries) {
+      const absolutePath = join(directory, entry.name);
+      const path = relativeDirectory
+        ? join(relativeDirectory, entry.name)
+        : entry.name;
+      const metadata = await inspect(absolutePath);
+      if (metadata.isDirectory()) {
+        await walk(absolutePath, path);
+      } else if (metadata.isFile()) {
+        files.push({ path, absolutePath });
+      }
+    }
+  }
+
+  await walk(root, '');
+  return files.sort((left, right) => (
+    compareCodePoints(logicalPath(left.path), logicalPath(right.path))
+  ));
+}
+
+async function manifestFile(path, logical, inspect = lstat) {
+  if (!await pathExists(path, inspect)) return null;
+  if (!(await inspect(path)).isFile()) return null;
   return { path: logical, sha256: await sha256File(path) };
 }
 
@@ -89,10 +128,12 @@ async function readJsonObject(path, label) {
   return value;
 }
 
-async function activeKeyframePlan(projectDir) {
+async function activeKeyframePlan(projectDir, inspect = lstat) {
   const promptsDir = join(projectDir, 'prompts');
   const imagesDir = join(projectDir, 'input', 'keyframes');
-  const promptEntries = await pathExists(promptsDir)
+  const promptsRootAvailable = await regularDirectoryExists(promptsDir, inspect);
+  const imagesRootAvailable = await regularDirectoryExists(imagesDir, inspect);
+  const promptEntries = promptsRootAvailable
     ? await readdir(promptsDir, { withFileTypes: true })
     : [];
   const prompts = promptEntries
@@ -108,7 +149,7 @@ async function activeKeyframePlan(projectDir) {
       KEYFRAME_ROLES.indexOf(left.role) - KEYFRAME_ROLES.indexOf(right.role)
     ));
 
-  const imageEntries = await pathExists(imagesDir)
+  const imageEntries = imagesRootAvailable
     ? await readdir(imagesDir, { withFileTypes: true })
     : [];
   const images = imageEntries
@@ -122,19 +163,29 @@ async function activeKeyframePlan(projectDir) {
     .filter((prompt) => !images.some((image) => image.role === prompt.role))
     .map(({ role }) => role);
 
-  return { prompts, images, incompleteRoles };
+  return {
+    prompts,
+    images,
+    incompleteRoles,
+    promptsRootAvailable,
+    imagesRootAvailable,
+  };
 }
 
-export async function buildGateManifest(projectDir, gate) {
+export async function buildGateManifest(projectDir, gate, inspect = lstat) {
   if (!GATES.includes(gate)) throw new Error('Unknown gate: ' + gate);
 
   if (gate === 'brief') {
-    const entry = await manifestFile(join(projectDir, 'brief.md'), 'brief.md');
+    const entry = await manifestFile(
+      join(projectDir, 'brief.md'),
+      'brief.md',
+      inspect,
+    );
     return entry ? [entry] : null;
   }
 
   if (gate === 'keyframes') {
-    const plan = await activeKeyframePlan(projectDir);
+    const plan = await activeKeyframePlan(projectDir, inspect);
     if (!plan.prompts.length || plan.incompleteRoles.length) return null;
     const selectedImages = plan.images.filter((image) => (
       plan.prompts.some((prompt) => prompt.role === image.role)
@@ -143,10 +194,12 @@ export async function buildGateManifest(projectDir, gate) {
       ...await Promise.all(plan.prompts.map((prompt) => manifestFile(
         prompt.absolutePath,
         logicalPath('prompts', prompt.name),
+        inspect,
       ))),
       ...await Promise.all(selectedImages.map((image) => manifestFile(
         image.absolutePath,
         logicalPath('input/keyframes', image.name),
+        inspect,
       ))),
     ]);
   }
@@ -155,14 +208,21 @@ export async function buildGateManifest(projectDir, gate) {
     const entry = await manifestFile(
       join(projectDir, 'input', 'video.mp4'),
       'input/video.mp4',
+      inspect,
     );
     return entry ? [entry] : null;
   }
 
   const valuesPath = join(projectDir, 'values.json');
   if (gate === 'extraction') {
-    const projectFrames = await regularFilesRecursive(join(projectDir, 'frames'));
-    const siteFrames = await regularFilesRecursive(join(projectDir, 'site', 'frames'));
+    const projectFrames = await regularFilesRecursive(
+      join(projectDir, 'frames'),
+      inspect,
+    );
+    const siteRoot = join(projectDir, 'site');
+    const siteFrames = await regularDirectoryExists(siteRoot, inspect)
+      ? await regularFilesRecursive(join(siteRoot, 'frames'), inspect)
+      : [];
     const frames = projectFrames.length ? projectFrames : siteFrames;
     const values = await readJsonObject(valuesPath, 'values.json');
     if (!frames.length || !values) return null;
@@ -185,34 +245,36 @@ export async function buildGateManifest(projectDir, gate) {
     }];
   }
 
-  const siteFiles = await regularFilesRecursive(join(projectDir, 'site'));
+  const siteFiles = await regularFilesRecursive(join(projectDir, 'site'), inspect);
   if (!siteFiles.length) return null;
   return sortManifestEntries(await hashFiles(siteFiles, 'site'));
 }
 
-async function regularFileExists(path) {
-  return await pathExists(path) && (await lstat(path)).isFile();
+async function regularFileExists(path, inspect = lstat) {
+  return await pathExists(path, inspect) && (await inspect(path)).isFile();
 }
 
-async function newestMtime(path) {
-  if (!await pathExists(path)) return null;
-  const metadata = await lstat(path);
+async function newestMtime(path, inspect = lstat) {
+  if (!await pathExists(path, inspect)) return null;
+  const metadata = await inspect(path);
   if (metadata.isFile()) return metadata.mtimeMs;
   if (!metadata.isDirectory()) return null;
-  const files = await regularFilesRecursive(path);
+  const files = await regularFilesRecursive(path, inspect);
   if (!files.length) return null;
   return Math.max(...await Promise.all(files.map(async (file) => (
-    (await lstat(file.absolutePath)).mtimeMs
+    (await inspect(file.absolutePath)).mtimeMs
   ))));
 }
 
-export async function buildInventory(projectDir) {
-  const keyframePlan = await activeKeyframePlan(projectDir);
-  const videoPromptExists = await regularFileExists(
-    join(projectDir, 'prompts', 'video.txt'),
-  );
+export async function buildInventory(projectDir, inspect = lstat) {
+  const keyframePlan = await activeKeyframePlan(projectDir, inspect);
+  const videoPromptExists = keyframePlan.promptsRootAvailable
+    && await regularFileExists(
+      join(projectDir, 'prompts', 'video.txt'),
+      inspect,
+    );
   const manifestPairs = await Promise.all(GATES.map(async (gate) => {
-    const entries = await buildGateManifest(projectDir, gate);
+    const entries = await buildGateManifest(projectDir, gate, inspect);
     return [gate, entries ? manifestHash(entries) : null];
   }));
   const approvalsPath = join(projectDir, 'approvals.json');
@@ -227,9 +289,22 @@ export async function buildInventory(projectDir) {
     config: join(projectDir, 'site', 'config.json'),
     keyframes: join(projectDir, 'input', 'keyframes'),
   };
-  const mtimePairs = await Promise.all(Object.entries(paths).map(async ([name, path]) => (
-    [name, await newestMtime(path)]
-  )));
+  const siteRootAvailable = await regularDirectoryExists(
+    join(projectDir, 'site'),
+    inspect,
+  );
+  const mtimePairs = await Promise.all([
+    ['video', newestMtime(paths.video, inspect)],
+    ['projectFrames', newestMtime(paths.projectFrames, inspect)],
+    [
+      'siteFrames',
+      siteRootAvailable ? newestMtime(paths.siteFrames, inspect) : null,
+    ],
+    ['brief', newestMtime(paths.brief, inspect)],
+    ['values', newestMtime(paths.values, inspect)],
+    ['config', siteRootAvailable ? newestMtime(paths.config, inspect) : null],
+    ['keyframes', newestMtime(paths.keyframes, inspect)],
+  ].map(async ([name, pendingMtime]) => [name, await pendingMtime]));
   const mtimes = Object.fromEntries(mtimePairs);
   const activeFramesMtime = mtimes.projectFrames ?? mtimes.siteFrames;
   const stale = [];
@@ -287,6 +362,7 @@ function finish(resumeStep, inventory, unapproved) {
 
 export function resolveResume(inventory) {
   const unapproved = [];
+  const missingSteps = [];
   let upstreamValidHash = null;
   let chainBroken = false;
 
@@ -297,18 +373,11 @@ export function resolveResume(inventory) {
     if (skippedKeyframes) continue;
 
     const currentHash = inventory.manifests[gate];
-    if (!currentHash) {
-      if (unapproved.length) {
-        return finish(GATES.indexOf(unapproved[0]) + 1, inventory, unapproved);
-      }
-      if (gate === 'keyframes' && inventory.keyframePromptCount === 0) {
-        return finish(2, inventory, unapproved);
-      }
-      return finish(GATES.indexOf(gate) + 1, inventory, unapproved);
-    }
-
+    const step = GATES.indexOf(gate) + 1;
+    if (!currentHash) missingSteps.push(step);
     const receipt = inventory.receipts[gate];
-    const valid = !chainBroken
+    const valid = Boolean(currentHash)
+      && !chainBroken
       && receipt?.manifestHash === currentHash
       && receipt?.basedOn === upstreamValidHash;
     if (!valid) {
@@ -319,16 +388,17 @@ export function resolveResume(inventory) {
     }
   }
 
-  if (unapproved.length) {
-    return finish(GATES.indexOf(unapproved[0]) + 1, inventory, unapproved);
-  }
-  if (inventory.incomplete.length) {
-    return finish(stepFor(inventory.incomplete[0]), inventory, unapproved);
-  }
-  if (inventory.stale.length) {
-    return finish(stepFor(inventory.stale[0]), inventory, unapproved);
-  }
-  return finish(7, inventory, unapproved);
+  const actionableSteps = [
+    ...missingSteps,
+    ...unapproved.map((gate) => GATES.indexOf(gate) + 1),
+    ...inventory.incomplete.map(stepFor),
+    ...inventory.stale.map(stepFor),
+  ];
+  return finish(
+    actionableSteps.length ? Math.min(...actionableSteps) : 7,
+    inventory,
+    unapproved,
+  );
 }
 
 function keyframesSkipped(inventory) {
@@ -405,12 +475,12 @@ function parseArguments(argv) {
 
 function stateForGate(gate, inventory, report) {
   if (gate === 'keyframes' && keyframesSkipped(inventory)) return 'skipped';
-  if (report.unapproved.includes(gate)) {
-    return inventory.receipts[gate] ? 'needs re-review' : 'ready-unapproved';
-  }
   const step = GATES.indexOf(gate) + 1;
   const incomplete = inventory.incomplete.some((item) => stepFor(item) === step);
   if (incomplete || !inventory.manifests[gate]) return 'incomplete';
+  if (report.unapproved.includes(gate)) {
+    return inventory.receipts[gate] ? 'needs re-review' : 'ready-unapproved';
+  }
   const stale = inventory.stale.some((item) => stepFor(item) === step);
   if (stale) return 'stale';
   return 'done';

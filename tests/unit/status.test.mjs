@@ -1,4 +1,5 @@
 import {
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
@@ -11,6 +12,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
+import {
+  canonicalJson,
+  sha256File,
+  sha256Text,
+} from '../../scripts/lib/files.mjs';
 import {
   GATES,
   approveGate,
@@ -63,6 +69,21 @@ async function createCompleteProject({ keyframes = true } = {}) {
 
 function fakeIo() {
   return { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
+}
+
+function noFollowInspection(...blockedRoots) {
+  const blocked = new Set(blockedRoots);
+  return async (path) => {
+    if (blocked.has(path)) {
+      return {
+        isDirectory: () => false,
+        isFile: () => false,
+        isSymbolicLink: () => true,
+        mtimeMs: 0,
+      };
+    }
+    return lstat(path);
+  };
 }
 
 function completeInventory(overrides = {}) {
@@ -134,6 +155,27 @@ describe('status inventory resolution', () => {
     ]));
   });
 
+  it('orders mixed-case and Unicode paths by code point', () => {
+    const entries = [
+      { path: '😀', sha256: hash('e') },
+      { path: 'é', sha256: hash('d') },
+      { path: 'a', sha256: hash('b') },
+      { path: 'Z', sha256: hash('a') },
+      { path: 'Å', sha256: hash('c') },
+    ];
+    const expected = [
+      entries[3],
+      entries[2],
+      entries[4],
+      entries[1],
+      entries[0],
+    ];
+
+    expect(manifestHash(entries)).toBe(
+      sha256Text(canonicalJson(expected)),
+    );
+  });
+
   it('reports a fully approved fresh chain as complete', () => {
     expect(resolveResume(completeInventory())).toEqual({
       resumeStep: 7,
@@ -174,7 +216,46 @@ describe('status inventory resolution', () => {
 
     expect(resolveResume(inventory)).toMatchObject({
       resumeStep: 1,
-      unapproved: ['brief', 'keyframes', 'video', 'extraction', 'theme'],
+      unapproved: [
+        'brief', 'keyframes', 'video', 'extraction', 'theme', 'preview',
+      ],
+    });
+  });
+
+  it('returns stale video before a missing preview receipt while reporting both', () => {
+    const inventory = completeInventory({ stale: ['video'] });
+    delete inventory.receipts.preview;
+
+    expect(resolveResume(inventory)).toEqual({
+      resumeStep: 3,
+      staleness: ['video'],
+      incomplete: [],
+      unapproved: ['preview'],
+    });
+  });
+
+  it('takes the earliest step across incomplete, stale, and unapproved signals', () => {
+    const inventory = completeInventory({
+      incomplete: ['keyframes'],
+      stale: ['extraction'],
+    });
+    delete inventory.receipts.preview;
+
+    expect(resolveResume(inventory)).toEqual({
+      resumeStep: 2,
+      staleness: ['extraction'],
+      incomplete: ['keyframes'],
+      unapproved: ['preview'],
+    });
+  });
+
+  it('invalidates every descendant after a missing manifest without truncation', () => {
+    const inventory = completeInventory();
+    inventory.manifests.video = null;
+
+    expect(resolveResume(inventory)).toMatchObject({
+      resumeStep: 3,
+      unapproved: ['video', 'extraction', 'theme', 'preview'],
     });
   });
 
@@ -188,7 +269,7 @@ describe('status inventory resolution', () => {
 
     expect(resolveResume(inventory)).toMatchObject({
       resumeStep: 2,
-      unapproved: [],
+      unapproved: ['keyframes', 'video', 'extraction', 'theme', 'preview'],
     });
   });
 
@@ -263,6 +344,23 @@ describe('gate manifests', () => {
       .not.toBe(manifestHash(before));
   });
 
+  it('uses project frames exclusively when both frame roots are populated', async () => {
+    const projectDir = await createCompleteProject({ keyframes: false });
+    const projectFrames = join(projectDir, 'frames');
+    const projectFrame = join(projectFrames, 'frame-0001.webp');
+    const siteFrame = join(projectDir, 'site', 'frames', 'frame-0001.webp');
+    await mkdir(projectFrames);
+    await writeFile(projectFrame, 'project frame');
+
+    const manifest = await buildGateManifest(projectDir, 'extraction');
+    expect(manifest.map(({ path }) => path)).toEqual([
+      'frames/frame-0001.webp',
+      'values.json#extraction',
+    ]);
+    expect(manifest[0].sha256).toBe(await sha256File(projectFrame));
+    expect(manifest[0].sha256).not.toBe(await sha256File(siteFrame));
+  });
+
   it('hashes all regular preview files recursively under site', async () => {
     const projectDir = await temporaryProject();
     await mkdir(join(projectDir, 'site', 'frames'), { recursive: true });
@@ -301,6 +399,74 @@ describe('gate manifests', () => {
         'prompts/keyframe-first.txt',
         'prompts/keyframe-ref-1.txt',
       ]);
+  });
+
+  it('does not follow a site root into preview, extraction, or mtime inventory', async () => {
+    const projectDir = await createCompleteProject();
+    const siteRoot = join(projectDir, 'site');
+    const inspect = noFollowInspection(siteRoot);
+
+    await expect(buildGateManifest(projectDir, 'preview', inspect)).resolves.toBeNull();
+    await expect(buildGateManifest(projectDir, 'extraction', inspect))
+      .resolves.toBeNull();
+    const inventory = await buildInventory(projectDir, inspect);
+    expect(inventory.manifests.preview).toBeNull();
+    expect(inventory.manifests.extraction).toBeNull();
+    expect(inventory.mtimes.siteFrames).toBeNull();
+    expect(inventory.mtimes.config).toBeNull();
+  });
+
+  it('does not follow either physical frame root and falls back only to a safe root', async () => {
+    const projectDir = await createCompleteProject({ keyframes: false });
+    const projectFrames = join(projectDir, 'frames');
+    const siteFrames = join(projectDir, 'site', 'frames');
+    await mkdir(projectFrames);
+    await writeFile(join(projectFrames, 'frame-0001.webp'), 'project frame');
+
+    const projectBlocked = noFollowInspection(projectFrames);
+    const fromSite = await buildGateManifest(
+      projectDir,
+      'extraction',
+      projectBlocked,
+    );
+    expect(fromSite[0].sha256).toBe(
+      await sha256File(join(siteFrames, 'frame-0001.webp')),
+    );
+    expect((await buildInventory(projectDir, projectBlocked)).mtimes.projectFrames)
+      .toBeNull();
+
+    const siteOnlyProject = await createCompleteProject({ keyframes: false });
+    const siteOnlyFrames = join(siteOnlyProject, 'site', 'frames');
+    const siteBlocked = noFollowInspection(siteOnlyFrames);
+    await expect(buildGateManifest(siteOnlyProject, 'extraction', siteBlocked))
+      .resolves.toBeNull();
+    expect((await buildInventory(siteOnlyProject, siteBlocked)).mtimes.siteFrames)
+      .toBeNull();
+    expect((await buildGateManifest(siteOnlyProject, 'preview', siteBlocked))
+      .map(({ path }) => path))
+      .not.toContain('site/frames/frame-0001.webp');
+  });
+
+  it('does not follow prompts or keyframe-image roots when inferring the plan', async () => {
+    const projectDir = await createCompleteProject();
+    const promptsRoot = join(projectDir, 'prompts');
+    const keyframesRoot = join(projectDir, 'input', 'keyframes');
+
+    const promptsBlocked = await buildInventory(
+      projectDir,
+      noFollowInspection(promptsRoot),
+    );
+    expect(promptsBlocked.keyframePromptCount).toBe(0);
+    expect(promptsBlocked.videoPromptExists).toBe(false);
+    expect(promptsBlocked.manifests.keyframes).toBeNull();
+
+    const imagesBlocked = await buildInventory(
+      projectDir,
+      noFollowInspection(keyframesRoot),
+    );
+    expect(imagesBlocked.incomplete).toEqual(['keyframes:first']);
+    expect(imagesBlocked.manifests.keyframes).toBeNull();
+    expect(imagesBlocked.mtimes.keyframes).toBeNull();
   });
 });
 
@@ -448,6 +614,17 @@ describe('filesystem inventory and approvals', () => {
 });
 
 describe('status CLI', () => {
+  it('prints missing artifacts as incomplete even when their chain is invalid', async () => {
+    const projectDir = await temporaryProject();
+    const io = fakeIo();
+
+    expect(await main([projectDir], io)).toBe(0);
+    expect(io.log.mock.calls.flat().join('\n')).toContain('1. brief: incomplete');
+    expect(io.log.mock.calls.flat().join('\n')).not.toContain(
+      '1. brief: ready-unapproved',
+    );
+  });
+
   it('prints JSON and human status states without approving anything', async () => {
     const projectDir = await createCompleteProject();
     const jsonIo = fakeIo();
