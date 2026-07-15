@@ -73,38 +73,50 @@ The wizard creates `<cwd>/<project-name>/` where invoked:
     keyframes/first.png|jpg # role names are the wizard's output; user drops any names
     video.mp4               # the generated clip (any mp4/mov in input/ is accepted)
   values.json               # creative values (agent-written; human-editable standalone)
-  frames/                   # extraction lands here; scaffold MOVES it into site/
+  approvals.json            # gate receipts: {step, artifact sha256, timestamp}
+  frames/                   # extraction lands here; scaffold installs it into site/
   site/                     # the deliverable — self-contained static site
     index.html  style.css  scrub-core.js  scrub-engine.js  lenis.js  config.json
     frames/frame-0001.webp .. frame-NNNN.webp
     fonts/display.woff2     # optional single local display font
 ```
 
-**Resume = filesystem-as-state, with staleness rules.** No state file — but presence
-alone never means "done." Resume is computed by a pure, unit-tested function
-`resolveResume(inventory)` over an inventory of `{path, exists, mtime}` plus the
-keyframe plan, returning `{resumeStep, staleness[], incomplete[]}`:
+**Resume = filesystem + approval receipts, with staleness rules.** Artifacts alone
+cannot prove a *gate* happened — they're written before approval is requested, so a
+crashed session would otherwise resume past gates nobody passed. The one piece of true
+state is therefore `approvals.json`: a receipt per gated step, `{step, sha256 of the
+gated artifact, timestamp}`, written by `status.mjs --approve <step>` which the wizard
+runs **only after the user's explicit approval**. Hash-tying makes receipts
+self-invalidating: edit `brief.md` after approving it and the receipt no longer
+matches. Resume is computed by a pure, unit-tested function `resolveResume(inventory)`
+over `{path, exists, mtime}` entries, the keyframe plan, and the receipts, returning
+`{resumeStep, staleness[], incomplete[], unapproved[]}`:
 
 | Signal | Meaning |
 |--------|---------|
-| Artifact present + fresh + complete | step done |
+| Artifact present + fresh + complete + receipt hash matches | step done |
+| Artifact present but no/mismatched receipt (gated steps) | resume **at that gate** — never past it |
 | `prompts/keyframe-*.txt` without a matching `input/keyframes/<role>.*` | keyframe set **incomplete** (the prompt files ARE the plan record) |
 | `input/*.mp4` newer than the frames dir (project-level or `site/frames/`) | extraction **stale** |
+| `<project>/frames/` newer than `site/frames/` | site build **stale** (re-extracted frames not yet installed) |
 | `brief.md` or values newer than `site/config.json` | site build **stale** |
 | `input/keyframes/*` newer than `input/*.mp4` | video **possibly stale** (report only) |
 
 Free steps (extraction, scaffold) re-run automatically when stale. Money/time steps
 (keyframes, video) are never auto-redone: the wizard reports the staleness and asks.
 The mp4 on disk is still the checkpoint — but a checkpoint that can be *invalidated*,
-not blindly trusted.
+not blindly trusted, and never a substitute for the gate that reviews it. Standalone
+CLI users can ignore receipts entirely: `status.mjs` reports "ready (unapproved)"
+distinctly from "done", and the scripts themselves never require approval to run.
 
 ## 4. Wizard flow (8 steps, hard gates)
 
 Iron rules, stated bluntly at the top of SKILL.md and repeated per step:
 
 1. **Never pass a hard gate without the user's explicit approval.** Show the artifact,
-   ask, wait. "Redo" loops the step with the user's feedback; revised prompts get
-   `-v2`, `-v3` suffixes.
+   ask, wait. On approval, record the receipt (`status.mjs --approve <step>`) so resume
+   can trust it; a gate with no receipt is a gate that never happened. "Redo" loops the
+   step with the user's feedback; revised prompts get `-v2`, `-v3` suffixes.
 2. **Never spend money without approval of the exact prompt** (API mode).
 3. **Never hand-edit or regenerate the template files** — configuration happens only
    through `config.json` values.
@@ -215,8 +227,9 @@ Steps:
   costs seconds to iterate, so it gets its own stop. *Gate (light): approve or tweak
   the theme tokens.* Then the agent writes the creative-values JSON (brief copy +
   derived theme + `posterIndex`) and runs `scaffold-site.mjs <project> --config
-  values.json`: copies the template verbatim, **moves** `<project>/frames/` →
-  `site/frames/` (same-volume rename, zero copying), derives the `frames` block from
+  values.json`: copies the template verbatim, **installs** `<project>/frames/` as
+  `site/frames/` (atomic same-volume rename, replacing any previous set — §5), derives
+  the `frames` block from
   what is actually on disk (single source of truth), merges, validates (§6 severity
   rules), writes `site/config.json` and the project README.
 - **6 — Preview.** Any static server; documented default `npx serve site`. The
@@ -247,7 +260,10 @@ Steps:
   (`t_i = (i + 0.5) · duration / count` — avoids t=0 junk frames and EOF seeks),
   scaled to `--width` (aspect preserved), named `frame-0001.<ext>` … 1-based, 4-padded.
   `count` must be 1..9999.
-- Refuses a non-empty `outDir` without `--force`.
+- Refuses a non-empty `outDir` without `--force`. `--force` means **wholesale atomic
+  replacement, never in-place overwrite**: frames are written to a temp sibling dir,
+  then swapped in (rename old out, rename new in, delete old) — so a 150-frame WebP
+  set rerun as 100 JPGs can never leave a stale mixed tail behind.
 - Prints summary: count, dimensions, total bytes, avg bytes/frame; warns when total
   > 12 MB with the knobs to turn (count, width, quality).
 - Pure, exported, unit-tested: `framePlan(duration, count) → timestamps[]`, arg parsing,
@@ -258,26 +274,35 @@ Steps:
 ### scaffold-site.mjs `<projectDir> --config <values.json> [--force]`
 - Copies `template/` → `<projectDir>/site/` (existing template-owned files require
   `--force`; re-scaffolding for a theme/copy tweak is the expected loop).
-- Frames: **moves** `<projectDir>/frames/` → `site/frames/` (same-volume `rename`,
-  zero copy). If `site/frames/` already exists (re-scaffold), it is preserved
-  untouched. Neither present and non-empty → clear error (extraction comes first).
-- Derives `frames.count` and `frames.pattern` from disk; `frames.poster` comes from
-  the creative values' `posterIndex` (default 1; error if outside `1..count`); merges;
-  validates with the same `validateConfig` the template uses (template file is the
-  single schema authority); writes `site/config.json` and `<projectDir>/README.md`
-  (rerun commands). Errors block with a list; warnings print without blocking.
+- Frames install rule: if `<projectDir>/frames/` exists (fresh or re-extraction), it
+  **becomes** `site/frames/` via atomic swap — same-volume renames, zero copy, and any
+  previous `site/frames/` is replaced wholesale (it's regenerable from the mp4), with a
+  printed notice. Only when no project-level `frames/` exists is an existing
+  `site/frames/` left untouched (theme/copy-only re-scaffold). Neither present →
+  clear error (extraction comes first). Re-extracted frames can therefore never be
+  silently shadowed by the old published set.
+- Derives `frames.count` and `frames.pattern` from disk, **validating the set is
+  contiguous `1..N` in a single format** — gaps or mixed extensions are a blocking
+  error naming the fix (re-run extraction). `frames.poster` comes from the creative
+  values' `posterIndex` (default 1; error if outside `1..count`); merges; validates
+  with the same `validateConfig` the template uses (template file is the single schema
+  authority); writes `site/config.json` and `<projectDir>/README.md` (rerun commands).
+  Errors block with a list; warnings print without blocking.
 - Division of labor: creative translation (brief → values.json) is the agent's job —
   or a human's, in standalone use (documented example in README); deterministic assembly
   is the script's job.
 
-### status.mjs `<projectDir> [--json]`
-- Prints the resume report: per-step done / incomplete / stale, and the recommended
-  resume step — the deterministic backbone of §3's resume rules, so the wizard runs a
-  script instead of doing ad-hoc mtime math (and standalone users get a status command
-  for free).
+### status.mjs `<projectDir> [--json] [--approve <step>]`
+- Prints the resume report: per-step done / ready-unapproved / incomplete / stale, and
+  the recommended resume step — the deterministic backbone of §3's resume rules, so
+  the wizard runs a script instead of doing ad-hoc mtime math (and standalone users
+  get a status command for free).
+- `--approve <step>`: hashes the step's gated artifact and writes the receipt into
+  `approvals.json`. The wizard invokes this **only after** the user's explicit
+  approval; it is the only writer of receipts.
 - Core is the pure `resolveResume(inventory)` (inventory = paths + mtimes + keyframe
-  plan parsed from `prompts/` filenames), unit-tested with synthetic inventories; the
-  filesystem walk is a thin seam.
+  plan parsed from `prompts/` filenames + receipts), unit-tested with synthetic
+  inventories; the filesystem walk and hashing are thin seams.
 
 ## 6. Template and scrub engine
 
@@ -378,9 +403,9 @@ callouts, Zipline waypoint data).
 | `frameFilename(index, pattern)` | expands `{index:N}` token, 1-based zero-pad |
 | `overlayOpacity(progress, [start, end], fade)` | 0→1 ramp over `fade` at each edge, 1 inside, 0 outside; `fade` defaults to `min(0.05, (end−start)/2)` |
 | `holdFrames(holds, frameCount)` | the exact frame index each hold freezes on (its plateau's effective progress through `progressToFrame`) — drives the step-4 hold-frame review |
-| `recommendHeightVh(baseVh, holds)` | grows the page so motion pace stays constant: `baseVh × (1 + Σ hold spans)`, plus the between-stops speed-up factor for display |
+| `recommendHeightVh(baseVh, holds)` | grows the page so motion pace stays constant. Scrollable distance is `height − 100vh` (the sticky viewport doesn't scrub), so: `100 + (baseVh − 100) / (1 − Σ hold spans)` — e.g. 400vh with 50% holds → 700vh, not 600. Also returns the between-stops speed-up factor for display |
 | `contrastRatio(colorA, colorB)` | WCAG 2.x relative-luminance contrast ratio (1–21), with rgba-over-bg compositing helper for `surface` |
-| `validateConfig(obj)` | returns `{ errors, warnings }`, both typed and human-readable; valid = no errors. **Errors:** every `at` within `[0, 1]` with `start < end`; hold ranges non-overlapping and not covering all of `[0, 1]`; CTA (overlay and outro) if present needs non-empty `label` and `href`; `stats` entries need non-empty `value` and `label`; theme colors parse as hex/rgba; `radius` non-negative; `surface` alpha ≥ 0.45; `fonts.displayFile` if present is a `.woff2` path; AA (4.5:1) on `text`/`bg` and on CTA label / `surface`-composited-over-`bg`. **Warnings:** total frames outside 24–400 |
+| `validateConfig(obj)` | returns `{ errors, warnings }`, both typed and human-readable; valid = no errors. **Errors:** every `at` within `[0, 1]` with `start < end`; hold ranges non-overlapping and not covering all of `[0, 1]`; CTA (overlay and outro) if present needs non-empty `label` and an `href` whose scheme is allowed — `https:`, `http:`, `mailto:`, `tel:`, relative paths, or `#anchors`; `javascript:` and unknown schemes are errors; `stats` entries need non-empty `value` and `label`; theme colors parse as hex/rgba; `radius` non-negative; `surface` alpha ≥ 0.45; `fonts.displayFile` if present must be a normalized relative path of the form `fonts/<name>.woff2` — no URLs, no `..`, nothing outside `site/fonts/` (self-contained contract); AA (4.5:1) on `text`/`bg` and on CTA label / `surface`-composited-over-`bg`. **Warnings:** total frames outside 24–400; `displayFile` named but missing on disk (scaffold-side check; engine falls back to the stack) |
 
 ### scrub-engine.js — DOM glue, untested by design
 
@@ -393,7 +418,11 @@ scrub, never the site. rAF loop redraws only when the smoothed frame index chang
 ResizeObserver + DPR handling; Lenis initialized if `lenis.js` is present; registers
 `fonts.displayFile` via the FontFace API when set. Frame index is computed from
 `applyHolds(rawProgress, holdRanges)`; overlay opacity from raw progress — that
-ordering is what makes text land while the scene stands still.
+ordering is what makes text land while the scene stands still. **Invisible means
+inoperable:** when an overlay's opacity falls below ~0.05 the engine sets `inert` on
+it (removing hit-testing, keyboard focus, and assistive-tech exposure in one
+attribute) — opacity alone would leave ghost CTAs clickable and tab-reachable; the
+pointer-events split governs only the *visible* state.
 
 **Reduced motion = the static experience, not a tamer scrub.** Under
 `prefers-reduced-motion` the engine skips frame preloading entirely (≈ the whole
@@ -426,16 +455,24 @@ is out of scope).
     compositing, and `validateConfig` **erroring** on an AA-failing theme and on
     `surface` alpha < 0.45;
     `holdFrames`: freeze-frame indices for zero/one/many holds, edges;
-    `recommendHeightVh`: no holds = base, spans sum correctly, speed-up factor;
-  - `resolveResume` with synthetic inventories: fresh chain, missing plan role
-    (incomplete), video newer than frames (stale), brief newer than config (stale),
+    `recommendHeightVh`: no holds = base; 400vh with 50% holds = 700vh; speed-up factor;
+    href scheme allowlist (`javascript:` rejected, relative/`#`/`mailto:` accepted) and
+    `displayFile` path rules (URL and `..` traversal rejected);
+  - `resolveResume` with synthetic inventories: fresh chain with matching receipts
+    (done), artifact present but receipt missing or hash-mismatched (resume at that
+    gate), missing plan role (incomplete), video newer than frames (stale), project
+    frames newer than site frames (site build stale), brief newer than config (stale),
     keyframes newer than video (report-only);
   - `videoVerdict` / `imageVerdict` fed canned ffprobe JSON (valid, warning-laden,
     garbage);
   - `extract-frames` arg parsing, `framePlan` (exact count, even spacing, midpoint
     offsets), budget summary + 4G load-estimate math;
-  - `scaffold-site` config merge, frames-block derivation, frames-dir move semantics,
-    and `posterIndex` range validation (against a temp dir).
+  - `scaffold-site` config merge, frames-block derivation (contiguity + single-format
+    validation: gaps and mixed extensions are blocking errors), frames install/replace
+    semantics (fresh move; atomic replace when both dirs exist), and `posterIndex`
+    range validation (against a temp dir);
+  - `extract-frames` `--force` swap semantics: rerun with a different count/format
+    leaves exactly the new set, no stale tail.
 - **Integration (requires ffmpeg; suite self-skips with a clear message when absent):**
   1. `beforeAll`: generate fixture `ffmpeg -f lavfi -i testsrc=duration=2:size=320x240:rate=15`
      (no binary committed).
@@ -448,8 +485,11 @@ is out of scope).
      the 24; `config.json` parses; `frames.count === 24`; `frames.poster` resolves to
      frame 12; expanding `frames.pattern` for indices 1 and 24 resolves to files that
      exist; `index.html` references the engine and config.
-  6. `status` on the finished project → all steps done; touch the fixture mp4 to be
-     newer than `site/frames/` → extraction reported stale.
+  6. `status --approve` for each gated step, then `status` → all steps done; without
+     the approvals, the same project reports ready-unapproved at the first gate. Touch
+     the fixture mp4 to be newer than `site/frames/` → extraction reported stale.
+  7. Re-extract `--count 12 --format jpg` + re-scaffold → `site/frames/` holds exactly
+     12 jpgs, config says 12, old webps gone.
 - **Template/scripts are written once and tested** — the skill copies and configures
   them per project, never regenerates them. Tests import the actual shipped files
   (`template/scrub-core.js`, script exports), not copies.
@@ -551,6 +591,7 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
 | AA contrast error / surface alpha < 0.45 | Scaffold blocks; the agent adjusts theme tokens and re-runs (user never fights it) |
 | `posterIndex` outside `1..count` | Scaffold error |
 | Artifact stale on resume (§3) | Free steps re-run automatically; money steps reported + asked |
+| Gated artifact present but receipt missing/mismatched | Resume lands AT that gate — approval is re-requested, never assumed |
 | Corrupt / fake mp4 (HTML saved as .mp4) | `validate-media` exit 2 with one-line cause |
 | Non-empty extraction outDir | Refuse without `--force` |
 | MCP unavailable/fails in api mode | Fall back to manual with the same prompt file |
