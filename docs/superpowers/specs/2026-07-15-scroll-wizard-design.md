@@ -372,8 +372,8 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
     planned as waypoints at intake.
   These are registers to reason from, not sites to copy — palette and type still derive
   from this brief's own scene (§6).
-- **Mood vocabulary for the art-direction pass** (register = narrative shape; mood =
-  surface treatment; the pass may blend, always traced to this brief's frames):
+- **Mood vocabulary for the art-direction pass** — internal reference points for the
+  agent, not a menu (register = narrative shape; mood = surface treatment):
   - *Quiet premium* (Apple) — near-black or near-white field, type-led, one accent.
   - *Data journey* (Zipline) — stats as protagonists, cartographic restraint.
   - *Glossy object-world* (Nothin', noth.in) — playful tactile 3D materials (foil,
@@ -384,8 +384,17 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
     frame counter is already honest data the scrub engine has.
   - *Configurator stop* (Tesla) — a stopped scene treated as a spec panel: product
     centered, side panel with `stats` rows and a decisive CTA.
-  Intake's vibe question offers this vocabulary; the stops questionnaire offers `stats`
-  whenever a stop is a product highlight or waypoint.
+  - *Cinematic story* (Valentime by Noomo) — scroll as film: narrative chapters with
+    emotional pacing, elegant restrained type over atmospheric scenes, whitespace as
+    drama; suits journey-register briefs that are stories rather than data.
+  **Guardrail — no explicit borrowing without a strong match.** This vocabulary is for
+  the agent's private reasoning. The vibe question stays open-ended; the agent matches
+  the user's answers against the vocabulary silently, and only surfaces or applies a
+  named mood when the user's own prompting is a strong match — their brief clearly
+  evokes it, or they name the site/brand themselves. Default is always direction
+  derived from this brief's copy and this scene's frames; a matched mood is a starting
+  point to blend, never a costume. The stops questionnaire offers `stats` whenever a
+  stop is a product highlight or waypoint (that's a feature, not a look).
 - **One continuous shot, no cuts** — a scene cut destroys the scrub illusion; this is
   the single most important constraint and appears in every video prompt.
 - Slow, constant-velocity camera motion matched to the brief's motion type; 6–8 s
@@ -420,7 +429,8 @@ Progressive/adaptive frame loading, multi-resolution frame sets, multiple templa
 themes (one template, config-themed), AVIF, deploy automation, custom preview server,
 state files, npm publishing (layout ready only), Codex `openai.yaml` metadata,
 browser-based E2E tests, local font files (system stacks only in v1), image slots in
-overlays (the video is the product shot).
+overlays (the video is the product shot), ambient audio / sound toggle (a Valentime
+signature, but out of scope).
 
 ## 12. Deferred to implementation plan
 
