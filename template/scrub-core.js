@@ -161,13 +161,63 @@ export function contrastRatio(colorA, colorB, compositeOver) {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+const trustedOrigin = 'https://scroll-wizard.invalid';
+
+function decodedVariants(value) {
+  const variants = [value];
+  let current = value;
+  while (/%[0-9a-f]{2}/i.test(current)) {
+    let decoded;
+    try {
+      decoded = decodeURIComponent(current);
+    } catch {
+      break;
+    }
+    if (decoded === current) break;
+    variants.push(decoded);
+    current = decoded;
+  }
+  return variants;
+}
+
+function hasUnsafePathSyntax(value, rejectCurrentSegments = false) {
+  return decodedVariants(value).some((candidate) => {
+    const path = candidate.split(/[?#]/, 1)[0];
+    return candidate.trim() !== candidate
+      || /[\u0000-\u001f\\]/.test(candidate)
+      || candidate.startsWith('//')
+      || /(^|\/)\.\.(?=\/|$)/.test(path)
+      || (rejectCurrentSegments && /(^|\/)\.(?=\/|$)/.test(path));
+  });
+}
+
 function safeHref(value) {
-  if (typeof value !== 'string' || value.trim() !== value || /[\u0000-\u001f]/.test(value)) {
+  if (typeof value !== 'string' || hasUnsafePathSyntax(value)) return false;
+  const hasExplicitScheme = /^[a-z][a-z\d+.-]*:/i.test(value);
+  try {
+    if (hasExplicitScheme) {
+      return ['https:', 'http:', 'mailto:', 'tel:'].includes(new URL(value).protocol);
+    }
+    if (!/^(#|\/(?!\/)|\.\/|\?)/.test(value)) return false;
+    return new URL(value, trustedOrigin).origin === trustedOrigin;
+  } catch {
     return false;
   }
-  if (/^(#|\/(?!\/)|\.{1,2}\/|\?)/.test(value)) return true;
+}
+
+function safeFramePath(value) {
+  if (typeof value !== 'string' || hasUnsafePathSyntax(value, true)) return false;
+  const variants = decodedVariants(value);
+  const decoded = variants[variants.length - 1];
+  if (!value.startsWith('frames/') || !decoded.startsWith('frames/')
+      || decoded.includes('//')) return false;
   try {
-    return ['https:', 'http:', 'mailto:', 'tel:'].includes(new URL(value).protocol);
+    const resolved = new URL(decoded, trustedOrigin);
+    const normalized = decodeURIComponent(resolved.pathname.slice(1));
+    return resolved.origin === trustedOrigin
+      && !resolved.search
+      && !resolved.hash
+      && normalized === decoded;
   } catch {
     return false;
   }
@@ -221,8 +271,11 @@ export function validateConfig(config) {
   }
   if (typeof frames.pattern !== 'string' || !/\{index:\d+\}/.test(frames.pattern)) {
     addError('frames.pattern', 'frames.pattern', 'Frame pattern requires an {index:N} token.');
+  } else if (!safeFramePath(frames.pattern)) {
+    addError('frames.pattern', 'frames.pattern',
+      'Frame pattern must be a normalized path under frames/.');
   }
-  if (typeof frames.poster !== 'string' || !frames.poster.startsWith('frames/')) {
+  if (typeof frames.poster !== 'string' || !safeFramePath(frames.poster)) {
     addError('frames.poster', 'frames.poster', 'Poster must be a path under frames/.');
   }
 
@@ -234,10 +287,17 @@ export function validateConfig(config) {
     addError('scrub.smoothing', 'scrub.smoothing', 'Smoothing must be in [0, 1).');
   }
 
+  if (config.overlays !== undefined && !Array.isArray(config.overlays)) {
+    addError('overlays.type', 'overlays', 'Overlays must be an array.');
+  }
   const overlays = Array.isArray(config.overlays) ? config.overlays : [];
   const holds = [];
   overlays.forEach((overlay, index) => {
     const path = 'overlays[' + index + ']';
+    if (!overlay || typeof overlay !== 'object' || Array.isArray(overlay)) {
+      addError('overlay.type', path, 'Overlay must be an object.');
+      return;
+    }
     const range = overlay.at;
     if (!Array.isArray(range) || range.length !== 2
         || !range.every(Number.isFinite)

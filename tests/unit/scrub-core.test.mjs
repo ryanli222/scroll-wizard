@@ -147,4 +147,146 @@ describe('colors and config validation', () => {
       expect.arrayContaining(['holds.overlap', 'font.path']),
     );
   });
+
+  it('rejects traversal, backslashes, external relative resolution, and unsafe CTA hrefs', () => {
+    const unsafeHrefs = [
+      '../admin',
+      '/safe/../secret',
+      '/safe/%2e%2e/secret',
+      '/safe/%252e%252e/secret',
+      '/safe\\secret',
+      '/safe/%5csecret',
+      '\\\\server\\share',
+      '//example.com/path',
+      ' /path',
+      '/path ',
+      '/pa\u0000th',
+      'javascript:alert(1)',
+      'data:text/html,unsafe',
+      'ftp://example.com/file',
+    ];
+
+    unsafeHrefs.forEach((href) => {
+      const result = validateConfig({
+        ...validConfig,
+        overlays: [{
+          ...validConfig.overlays[0],
+          cta: { label: 'Open', href },
+        }],
+      });
+      expect(result.errors.map((entry) => entry.code), href).toContain('cta.href');
+    });
+  });
+
+  it('allows same-origin relative forms and approved explicit CTA schemes', () => {
+    const safeHrefs = [
+      '/path',
+      './path',
+      '?query=value',
+      '#anchor',
+      'https://example.com/path',
+      'http://example.com/path',
+      'mailto:hello@example.com',
+      'tel:+14165550123',
+    ];
+
+    safeHrefs.forEach((href) => {
+      const result = validateConfig({
+        ...validConfig,
+        overlays: [{
+          ...validConfig.overlays[0],
+          cta: { label: 'Open', href },
+        }],
+      });
+      expect(result.errors.map((entry) => entry.code), href).not.toContain('cta.href');
+    });
+  });
+
+  it('requires normalized frame patterns contained under frames', () => {
+    const unsafePatterns = [
+      '/frames/frame-{index:4}.webp',
+      'frames\\frame-{index:4}.webp',
+      'frames/../frame-{index:4}.webp',
+      'frames/%2e%2e/frame-{index:4}.webp',
+      'frames/%252e%252e/frame-{index:4}.webp',
+      'frames/./frame-{index:4}.webp',
+      'frames//frame-{index:4}.webp',
+      'https://example.com/frames/frame-{index:4}.webp',
+    ];
+
+    unsafePatterns.forEach((pattern) => {
+      const result = validateConfig({
+        ...validConfig,
+        frames: { ...validConfig.frames, pattern },
+      });
+      expect(result.errors, pattern).toContainEqual(expect.objectContaining({
+        code: 'frames.pattern',
+        path: 'frames.pattern',
+      }));
+    });
+  });
+
+  it('requires normalized poster paths contained under frames', () => {
+    const unsafePosters = [
+      '/frames/frame-0001.webp',
+      'frames\\frame-0001.webp',
+      'frames/../frame-0001.webp',
+      'frames/%2e%2e/frame-0001.webp',
+      'frames/%252e%252e/frame-0001.webp',
+      'frames/./frame-0001.webp',
+      'frames//frame-0001.webp',
+      'https://example.com/frames/frame-0001.webp',
+    ];
+
+    unsafePosters.forEach((poster) => {
+      const result = validateConfig({
+        ...validConfig,
+        frames: { ...validConfig.frames, poster },
+      });
+      expect(result.errors, poster).toContainEqual(expect.objectContaining({
+        code: 'frames.poster',
+        path: 'frames.poster',
+      }));
+    });
+  });
+
+  it('returns a structured error for non-array overlays', () => {
+    const result = validateConfig({ ...validConfig, overlays: null });
+
+    expect(result.errors).toContainEqual({
+      code: 'overlays.type',
+      path: 'overlays',
+      message: 'Overlays must be an array.',
+    });
+  });
+
+  it('returns structured errors for invalid overlay entries without throwing', () => {
+    const result = validateConfig({
+      ...validConfig,
+      overlays: [null, 42, 'invalid', []],
+    });
+
+    expect(result.errors.filter((entry) => entry.code === 'overlay.type')).toEqual([
+      {
+        code: 'overlay.type',
+        path: 'overlays[0]',
+        message: 'Overlay must be an object.',
+      },
+      {
+        code: 'overlay.type',
+        path: 'overlays[1]',
+        message: 'Overlay must be an object.',
+      },
+      {
+        code: 'overlay.type',
+        path: 'overlays[2]',
+        message: 'Overlay must be an object.',
+      },
+      {
+        code: 'overlay.type',
+        path: 'overlays[3]',
+        message: 'Overlay must be an object.',
+      },
+    ]);
+  });
 });
