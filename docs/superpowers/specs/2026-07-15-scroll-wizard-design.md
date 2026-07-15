@@ -107,8 +107,9 @@ Steps:
   stop). Node >= 20. Mode: `manual` (default) or `api` if gemini-media-mcp tools are
   detected in the session. If the target project dir already exists, run resume detection.
 - **1 — Intake** → `brief.md`. Brand name, vibe/palette, motion type (orbit / dolly /
-  reveal / macro / morph…), overlay copy, outro copy + CTA, project name, mode choice,
-  frame budget (default 150). *Gate: approve the brief.*
+  reveal / macro / morph…), overlay copy — including which overlays are **stopped
+  scenes** (`hold`) and their placement (center/left/right) — outro copy + CTA, project
+  name, mode choice, frame budget (default 150). *Gate: approve the brief.*
 - **2 — Keyframes (skippable).** The agent proposes a keyframe plan suited to the motion
   type:
   - `first` only (default) — image-to-video seed; e.g. a dolly-in needs one strong opener.
@@ -193,7 +194,10 @@ Steps:
   "theme":    { "bg": "#0a0a0a", "text": "#f5f5f5", "accent": "#e8ff47" },
   "frames":   { "count": 150, "pattern": "frames/frame-{index:4}.webp", "poster": "frames/frame-0001.webp" },
   "scrub":    { "heightVh": 400, "smoothing": 0.12 },
-  "overlays": [ { "at": [0.05, 0.25], "title": "…", "body": "…" } ],
+  "overlays": [
+    { "at": [0.05, 0.25], "title": "…", "body": "…" },
+    { "at": [0.35, 0.55], "title": "…", "body": "…", "hold": true, "position": "left" }
+  ],
   "outro":    { "headline": "…", "body": "…", "cta": { "label": "…", "href": "#" } }
 }
 ```
@@ -202,11 +206,21 @@ Steps:
 60 fps reference (engine converts to a rate-independent decay constant). The
 creative-values JSON passed to scaffold is this schema minus the `frames` block.
 
+**Stopped scenes (`hold`)**: an overlay with `"hold": true` freezes the video during its
+`at` range — the Apple pattern where motion pauses, a text/product callout lands, then
+motion resumes. Implemented as a piecewise remap of scroll progress (see `applyHolds`):
+hold ranges plateau, and the video's frames redistribute proportionally across the
+moving segments, so scrub velocity stays constant and the mapping stays continuous and
+monotonic. Overlay *opacity* is driven by raw scroll progress, so text appears while the
+scene is stopped. `position` (`"center"` default, `"left"`, `"right"`) places the
+caption via CSS classes so callouts can sit beside the subject.
+
 ### scrub-core.js — pure, zero DOM, fully unit-tested
 
 | Function | Contract |
 |---|---|
 | `scrollProgress(scrollY, sectionTop, sectionHeight, viewportH)` | `clamp((scrollY − sectionTop) / (sectionHeight − viewportH), 0, 1)`; degenerate heights → 0 |
+| `applyHolds(progress, holds)` | piecewise remap for stopped scenes: identity when `holds` is empty; plateaus during each `[start, end]`; continuous, monotonic, maps 0→0 and 1→1; video progress distributes over moving segments proportionally to their scroll length |
 | `progressToFrame(progress, frameCount)` | `round(progress · (count − 1))`, clamped to `[0, count−1]` |
 | `smooth(current, target, k, dt)` | exponential decay `current + (target − current) · (1 − e^(−k·dt))` — frame-rate-independent |
 | `alphaToK(alpha)` | converts config `smoothing` (per-frame α @60 fps) to decay constant `k` |
@@ -214,7 +228,7 @@ creative-values JSON passed to scaffold is this schema minus the `frames` block.
 | `canvasSize(cssW, cssH, dpr, maxDpr = 2)` | backing-store `{width, height}`, DPR capped |
 | `frameFilename(index, pattern)` | expands `{index:N}` token, 1-based zero-pad |
 | `overlayOpacity(progress, [start, end], fade)` | 0→1 ramp over `fade` at each edge, 1 inside, 0 outside; `fade` defaults to `min(0.05, (end−start)/2)` |
-| `validateConfig(obj)` | returns list of typed, human-readable errors; `[]` = valid |
+| `validateConfig(obj)` | returns list of typed, human-readable errors; `[]` = valid. Includes hold rules: every `at` within `[0, 1]` with `start < end`; hold ranges must not overlap each other or cover the entire `[0, 1]` range |
 
 ### scrub-engine.js — DOM glue, untested by design
 
@@ -222,6 +236,8 @@ Fetches `config.json` (fails loudly via `validateConfig`), paints poster immedia
 preloads all frames with a progress bar, rAF loop that redraws only when the smoothed
 frame index changes, ResizeObserver + DPR handling, initializes Lenis if `lenis.js` is
 present, honors `prefers-reduced-motion` (direct index mapping, no lerp, no Lenis).
+Frame index is computed from `applyHolds(rawProgress, holdRanges)`; overlay opacity from
+raw progress — that ordering is what makes text land while the scene stands still.
 Covered by the preview gate and integration file-level assertions, not unit tests.
 
 ### index.html / style.css
@@ -237,6 +253,9 @@ is out of scope).
 - **Unit (vitest, no browser, no ffmpeg):**
   - every `scrub-core.js` function — mapping, clamping, NaN/degenerate inputs, cover
     math, DPR caps, opacity ramps, pattern expansion, config validation errors;
+    `applyHolds`: identity with no holds, exact plateau across each hold, continuity at
+    hold boundaries, monotonicity, 0→0 / 1→1, multiple holds, and validation rejection
+    of overlapping/out-of-range holds;
   - `videoVerdict` / `imageVerdict` fed canned ffprobe JSON (valid, warning-laden,
     garbage);
   - `extract-frames` arg parsing, `framePlan` (exact count, even spacing, midpoint
@@ -283,6 +302,9 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
 - Keyframe-plan heuristics per motion type (dolly → `first`; orbit/reveal → `first`+`last`;
   product consistency → `ref` set), and image prompts specify 16:9, no text, no
   watermarks, consistent palette drawn from the brief.
+- When the brief includes stopped scenes, the video prompt asks for composed "beats" —
+  moments mid-motion where the framing reads well as a held still (subject fully in
+  frame, no motion blur) — so hold plateaus land on frames worth stopping on.
 - Veo 3.1 / Flow mode mapping: which Flow feature to use per keyframe plan
   (Text / Image / Frames to Video / Ingredients), kept adaptable since Flow's UI evolves.
 
