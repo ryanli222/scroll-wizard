@@ -107,8 +107,9 @@ Steps:
   stop). Node >= 20. Mode: `manual` (default) or `api` if gemini-media-mcp tools are
   detected in the session. If the target project dir already exists, run resume detection.
 - **1 — Intake** → `brief.md`. Brand name, vibe/palette, motion type (orbit / dolly /
-  reveal / macro / morph…), outro copy + CTA, project name, mode choice, frame budget
-  (default 150). Then the **stops questionnaire** — the wizard asks the user explicitly,
+  reveal / macro / morph / journey-flythrough…), outro copy + CTA, project name, mode
+  choice, frame budget (default 150). The wizard first establishes the **register**
+  (§9): product scrub or journey — it shapes every default that follows. Then the **stops questionnaire** — the wizard asks the user explicitly,
   one question at a time (proposing defaults, e.g. 2–3 stops for a 400vh scrub):
   1. **How many stops** (stopped scenes) the page should have — zero is fine.
   2. **What each stop is for** — feature callout, product highlight, plain caption,
@@ -349,6 +350,19 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
 
 ## 9. Prompt-craft guidance encoded in SKILL.md
 
+- **Two registers, named after their inspirations.** The wizard classifies every brief
+  into one and lets it drive keyframe plans, stop defaults, and copy tone:
+  - **Product scrub (Apple register)** — one hero subject, camera orbits/dollies/reveals
+    around it; stops are feature callouts beside the subject; UI whisper-quiet, type-led;
+    outro CTA is the purchase/signup moment. Keyframe default: `first` (+ `last` for
+    orbit/reveal endpoints).
+  - **Journey (Zipline register)** — the camera *travels* (fly-through, descent, route);
+    stops are waypoints in a story, often data/stat callouts ("2 g CO₂ per delivery"),
+    with scale shifts (macro ↔ aerial) as the drama; outro lands the destination.
+    Keyframe default: `first` + `last` (origin and destination are the narrative), stops
+    planned as waypoints at intake.
+  These are registers to reason from, not sites to copy — palette and type still derive
+  from this brief's own scene (§6).
 - **One continuous shot, no cuts** — a scene cut destroys the scrub illusion; this is
   the single most important constraint and appears in every video prompt.
 - Slow, constant-velocity camera motion matched to the brief's motion type; 6–8 s
