@@ -143,11 +143,18 @@ Steps:
   copying 150 files; `scaffold-site` treats an existing `frames/` as data, never clobbers
   it). Reports frame count, dimensions, total MB against a ~12 MB soft budget. The agent
   views 2–3 sample frames to sanity-check visual quality. *Gate: approve payload + quality.*
-- **5 — Site build.** The agent translates `brief.md` into a creative-values JSON
-  (see §6 schema subset) and runs `scaffold-site.mjs <project> --config values.json`.
+- **5 — Site build.** Starts with an **art-direction pass**: the agent views 2–3
+  extracted frames and derives the theme *from the actual scene* — palette sampled from
+  the imagery (bg from the scene's darks, accent from its most saturated material,
+  `surface` as a translucent scene-dark), material mood → `radius` and font stacks,
+  per §6's UI-in-the-scene rules. This is what keeps buttons and captions on-theme with
+  the 3D world instead of generic UI. The agent then writes the creative-values JSON
+  (brief copy + derived theme) and runs `scaffold-site.mjs <project> --config values.json`.
   The script copies the template verbatim, derives the `frames` block from what is
-  actually on disk (single source of truth), merges, validates, writes
-  `site/config.json` and the project README. No separate gate — the preview is the gate.
+  actually on disk (single source of truth), merges, validates (blocking on errors,
+  printing contrast warnings), writes `site/config.json` and the project README. No
+  separate gate — but the theme rationale (each token + one line of why, traced to the
+  frames) is presented alongside the preview URL at the step-6 gate.
 - **6 — Preview.** Any static server; documented default `npx serve site`. The agent
   reminds the user what to check: scrub smoothness, overlay timing, mobile viewport.
   *Gate: user scrolled it and it feels right.*
@@ -187,7 +194,8 @@ Steps:
 - Derives `frames.count`, `frames.pattern`, `frames.poster` from disk; merges with the
   creative values JSON; validates the merged config with the same `validateConfig` the
   template uses (template file is the single schema authority); writes `site/config.json`
-  and `<projectDir>/README.md` (rerun commands). Exits nonzero on invalid config.
+  and `<projectDir>/README.md` (rerun commands). Exits nonzero listing errors; prints
+  warnings (e.g. AA contrast failures) without blocking.
 - Division of labor: creative translation (brief → values.json) is the agent's job —
   or a human's, in standalone use (documented example in README); deterministic assembly
   is the script's job.
@@ -199,7 +207,11 @@ Steps:
 ```json
 {
   "brand":    { "name": "…", "tagline": "…" },
-  "theme":    { "bg": "#0a0a0a", "text": "#f5f5f5", "accent": "#e8ff47" },
+  "theme":    {
+    "bg": "#0a0a0a", "text": "#f5f5f5", "accent": "#e8ff47",
+    "surface": "rgba(20, 20, 24, 0.55)", "radius": 10,
+    "fonts": { "display": "…", "body": "…" }
+  },
   "frames":   { "count": 150, "pattern": "frames/frame-{index:4}.webp", "poster": "frames/frame-0001.webp" },
   "scrub":    { "heightVh": 400, "smoothing": 0.12 },
   "overlays": [
@@ -231,6 +243,27 @@ scrolling over the canvas never snags), interactive elements inside it are
 `pointer-events: auto`. A stop with a product callout + buy button is the intended
 Apple-style use.
 
+**UI-in-the-scene rules** (how buttons and captions stay on-theme with the 3D world):
+
+- Every visual token the UI uses comes from `theme` — the template hardcodes structure,
+  never look. CSS custom properties are the only bridge.
+- Overlay panels and buttons are **scene chips**: translucent `surface` fill +
+  `backdrop-filter` blur + a 1px light-edge border — UI reads as glass floating in the
+  scene (the canvas shows through), which is what makes it feel *inside* the world
+  rather than pasted on. This chip treatment is the template's one signature element;
+  everything else stays quiet. Graceful without backdrop-filter support: opaque-enough
+  `surface` fallback.
+- `radius` and `fonts` carry the scene's material mood into the UI (sharp/technical →
+  small radius + grotesque stack; soft/organic → pill radius + humanist or serif
+  stack). Fonts are free-form CSS font-family strings but **system stacks only** — the
+  site stays self-contained with zero font downloads (local font files: out of scope v1).
+- Buttons say what they do ("Buy the lamp", "See the specs") — active voice, sentence
+  case, no "Learn more" filler. Copy is design material; SKILL.md carries this rule
+  into the stops questionnaire.
+- Quality floor, non-negotiable: visible keyboard focus (accent ring) on every
+  interactive element; `prefers-reduced-motion` respected; text-on-bg and
+  CTA-label-on-surface must clear WCAG AA (see `contrastRatio` below).
+
 ### scrub-core.js — pure, zero DOM, fully unit-tested
 
 | Function | Contract |
@@ -244,11 +277,13 @@ Apple-style use.
 | `canvasSize(cssW, cssH, dpr, maxDpr = 2)` | backing-store `{width, height}`, DPR capped |
 | `frameFilename(index, pattern)` | expands `{index:N}` token, 1-based zero-pad |
 | `overlayOpacity(progress, [start, end], fade)` | 0→1 ramp over `fade` at each edge, 1 inside, 0 outside; `fade` defaults to `min(0.05, (end−start)/2)` |
-| `validateConfig(obj)` | returns list of typed, human-readable errors; `[]` = valid. Includes hold rules: every `at` within `[0, 1]` with `start < end`; hold ranges must not overlap each other or cover the entire `[0, 1]` range. CTA rule (overlay and outro alike): if present, `label` and `href` must be non-empty strings |
+| `contrastRatio(hexA, hexB)` | WCAG 2.x relative-luminance contrast ratio (1–21); used by `validateConfig` to enforce the AA floor |
+| `validateConfig(obj)` | returns `{ errors, warnings }`, both typed and human-readable; valid = no errors. Error rules: every `at` within `[0, 1]` with `start < end`; hold ranges must not overlap each other or cover the entire `[0, 1]` range; CTA (overlay and outro alike) if present needs non-empty `label` and `href`; theme colors parse as hex/rgba, `radius` a non-negative number. Warning rules: `theme.text` vs `theme.bg` or CTA label vs `surface`-over-`bg` contrast below 4.5:1; total frames outside 24–400 |
 
 ### scrub-engine.js — DOM glue, untested by design
 
-Fetches `config.json` (fails loudly via `validateConfig`), paints poster immediately,
+Fetches `config.json` (fails loudly on `validateConfig` errors, console-warns on
+warnings), paints poster immediately,
 preloads all frames with a progress bar, rAF loop that redraws only when the smoothed
 frame index changes, ResizeObserver + DPR handling, initializes Lenis if `lenis.js` is
 present, honors `prefers-reduced-motion` (direct index mapping, no lerp, no Lenis).
@@ -273,6 +308,9 @@ is out of scope).
     `applyHolds`: identity with no holds, exact plateau across each hold, continuity at
     hold boundaries, monotonicity, 0→0 / 1→1, multiple holds, and validation rejection
     of overlapping/out-of-range holds and malformed CTAs (missing/empty label or href);
+    `contrastRatio`: black/white = 21, same color = 1, a known mid pair, and
+    `validateConfig` emitting a contrast warning for a failing theme while still
+    returning zero errors;
   - `videoVerdict` / `imageVerdict` fed canned ffprobe JSON (valid, warning-laden,
     garbage);
   - `extract-frames` arg parsing, `framePlan` (exact count, even spacing, midpoint
@@ -344,7 +382,8 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
 Progressive/adaptive frame loading, multi-resolution frame sets, multiple template
 themes (one template, config-themed), AVIF, deploy automation, custom preview server,
 state files, npm publishing (layout ready only), Codex `openai.yaml` metadata,
-browser-based E2E tests.
+browser-based E2E tests, local font files (system stacks only in v1), image slots in
+overlays (the video is the product shot).
 
 ## 12. Deferred to implementation plan
 
