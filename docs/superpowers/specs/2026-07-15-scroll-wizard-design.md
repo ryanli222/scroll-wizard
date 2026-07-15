@@ -30,6 +30,7 @@ Two-layer architecture, strictly separated:
     validate-media.mjs      # <file> [--json] → ffprobe-based verdict (video OR image rules)
     extract-frames.mjs      # <in.mp4> <outDir> --count --width --format --quality --force
     scaffold-site.mjs       # <projectDir> --config <values.json> [--force]
+    status.mjs              # <projectDir> [--json] → resume step + staleness report
   template/
     index.html
     style.css
@@ -69,37 +70,73 @@ The wizard creates `<cwd>/<project-name>/` where invoked:
     ref-1.txt .. ref-3.txt
     video.txt               # Veo 3.1 prompt; revisions saved as video-v2.txt, never overwritten
   input/
-    keyframes/first.png|jpg # fixed role names: first, last, ref-1..ref-3
-    video.mp4               # the generated clip (any single *.mp4 in input/ is accepted)
+    keyframes/first.png|jpg # role names are the wizard's output; user drops any names
+    video.mp4               # the generated clip (any mp4/mov in input/ is accepted)
+  values.json               # creative values (agent-written; human-editable standalone)
+  frames/                   # extraction lands here; scaffold MOVES it into site/
   site/                     # the deliverable — self-contained static site
     index.html  style.css  scrub-core.js  scrub-engine.js  lenis.js  config.json
     frames/frame-0001.webp .. frame-NNNN.webp
+    fonts/display.woff2     # optional single local display font
 ```
 
-**Resume = filesystem-as-state.** No state file. Re-invoking the skill inspects the
-project dir and offers to continue at the first incomplete step:
+**Resume = filesystem-as-state, with staleness rules.** No state file — but presence
+alone never means "done." Resume is computed by a pure, unit-tested function
+`resolveResume(inventory)` over an inventory of `{path, exists, mtime}` plus the
+keyframe plan, returning `{resumeStep, staleness[], incomplete[]}`:
 
-| Artifact present            | Step considered done |
-|-----------------------------|----------------------|
-| `brief.md`                  | 1 intake             |
-| `input/keyframes/*` valid   | 2 keyframes          |
-| `input/*.mp4` valid         | 3 video              |
-| `site/frames/*` non-empty   | 4 extraction         |
-| `site/config.json` valid    | 5 site build         |
+| Signal | Meaning |
+|--------|---------|
+| Artifact present + fresh + complete | step done |
+| `prompts/keyframe-*.txt` without a matching `input/keyframes/<role>.*` | keyframe set **incomplete** (the prompt files ARE the plan record) |
+| `input/*.mp4` newer than the frames dir (project-level or `site/frames/`) | extraction **stale** |
+| `brief.md` or values newer than `site/config.json` | site build **stale** |
+| `input/keyframes/*` newer than `input/*.mp4` | video **possibly stale** (report only) |
 
-Money is never re-spent: the mp4 on disk is the checkpoint.
+Free steps (extraction, scaffold) re-run automatically when stale. Money/time steps
+(keyframes, video) are never auto-redone: the wizard reports the staleness and asks.
+The mp4 on disk is still the checkpoint — but a checkpoint that can be *invalidated*,
+not blindly trusted.
 
 ## 4. Wizard flow (8 steps, hard gates)
 
 Iron rules, stated bluntly at the top of SKILL.md and repeated per step:
 
-1. **Never pass a gate without the user's explicit approval.** Show the artifact, ask,
-   wait. "Redo" loops the step with the user's feedback; revised prompts get `-v2`, `-v3`
-   suffixes.
+1. **Never pass a hard gate without the user's explicit approval.** Show the artifact,
+   ask, wait. "Redo" loops the step with the user's feedback; revised prompts get
+   `-v2`, `-v3` suffixes.
 2. **Never spend money without approval of the exact prompt** (API mode).
 3. **Never hand-edit or regenerate the template files** — configuration happens only
    through `config.json` values.
 4. All user interaction phrased harness-neutrally (see §8).
+
+**Gates are tiered — density matches what's at stake, and differs by mode:**
+
+- **Hard gates (both modes):** brief (1), video watched (3), preview (6) — the three
+  moments that are creative commitments or expensive to unwind.
+- **Light gates (both modes):** keyframe-set review (2), extraction + hold-frame review
+  (4), theme tokens (5) — the wizard presents the artifact with a recommendation and
+  proceeds on a simple go-ahead; cheap to revisit, so low ceremony.
+- **Money gates (API mode only):** before *every* paid MCP call, the exact prompt and
+  the fact that it costs money are shown and explicitly approved. Manual mode has no
+  money gates — prompts are free to regenerate, so they ship with the handoff card
+  instead of a separate stop.
+- Honest limitation, stated in SKILL.md: conversation gates are enforced by the host
+  model following instructions — there is no mechanical spend-lock in v1, because the
+  agent calls MCP directly and no script of ours mediates it. (A wrapper that owns
+  API-mode generation is a possible future hardening.)
+
+**Manual handoff protocol** (steps 2 and 3 — the primary user journey): when it's the
+user's turn to generate in Flow, the wizard prints a single **handoff card** — the
+paste-ready prompt, the exact Flow feature to use, and the exact drop path — then
+**ends its turn**. No polling, no timeouts, no "are you done yet": the next user
+message (any message) triggers validation of whatever landed, and a fresh session gets
+there through resume detection, so overnight round-trips cost nothing. File intake is
+**forgiving**: any image/video files in the drop dirs are accepted regardless of name
+or format (png/jpg/webp; mp4/mov); the agent views what arrived, proposes the
+role mapping ("the wide dark one reads as `first` — confirm?"), renames to role names
+itself, and asks only when genuinely ambiguous. Strict filenames are the wizard's
+output convention, never the user's input burden.
 
 Steps:
 
@@ -109,17 +146,30 @@ Steps:
 - **1 — Intake** → `brief.md`. Brand name, vibe/palette, motion type (orbit / dolly /
   reveal / macro / morph / journey-flythrough / exploded-teardown / light-sweep /
   scale-travel / peel-back…), outro copy + CTA, project name, mode choice, frame budget
-  (default 150). The wizard first establishes the **register**
-  (§9): product scrub or journey — it shapes every default that follows. Then the **stops questionnaire** — the wizard asks the user explicitly,
-  one question at a time (proposing defaults, e.g. 2–3 stops for a 400vh scrub):
+  (default 150). **Adaptive length — the happy path is short.** The wizard first
+  establishes the **register** (§9) — it shapes every default that follows — then asks
+  only the *minimum* needed to propose a complete draft brief (brand, vibe, motion
+  type, stops yes/no; batched where natural, every question carrying a proposed
+  default the user can wave through). A "product scrub, zero stops, one CTA" brief
+  takes ~4 answers and lands at the gate. The detailed **stops questionnaire** runs
+  only when stops > 0, one stop at a time (proposing defaults, e.g. 2–3 stops for a
+  400vh scrub):
   1. **How many stops** (stopped scenes) the page should have — zero is fine.
   2. **What each stop is for** — feature callout, product highlight, plain caption,
      brand statement…
   3. **Which product** (if any) each stop showcases, and the copy for it (title/body).
   4. **Any clickable buttons** — per stop, an optional button label + destination URL
      (buy page, spec sheet, signup…), plus placement (center/left/right).
-  Non-stop overlays (captions that ride over motion) are gathered the same way.
-  *Gate: approve the brief.*
+  The questionnaire surfaces the **hold tradeoff** in plain terms: stops consume
+  scroll without motion, so the clip plays faster between them — every stop plan is
+  presented with its computed speed-up and a recommended `heightVh`
+  (`recommendHeightVh` in §6 keeps motion pace constant by growing the page), so
+  "feels rushed" vs "page too tall" is a knob the user consciously sets, not a
+  surprise. Non-stop overlays (captions that ride over motion) are gathered the same
+  way. Intake also picks the **payload preset**: desktop-rich (150 frames @ 1600 px)
+  or mobile-first (100 frames @ 1280 px, quality 75, ~half the bytes) — presented with
+  estimated load time on a mid 4G connection, not just megabytes.
+  *Gate (hard): approve the brief.*
 - **2 — Keyframes (skippable).** The agent proposes a keyframe plan suited to the motion
   type:
   - `first` only (default) — image-to-video seed; e.g. a dolly-in needs one strong opener.
@@ -127,39 +177,56 @@ Steps:
     a reveal ending open). Veo interpolates between them.
   - up to 3 `ref` images — Flow "Ingredients" mode, when subject consistency matters
     more than exact endpoints.
-  One paste-ready prompt file per image. Manual mode: user generates in Flow (free on
-  their plan) and drops files into `input/keyframes/` under role names. API mode:
-  image generation via MCP after prompt approval. The agent **views every image** and
+  One paste-ready prompt file per image. Manual mode: handoff card per the protocol
+  above; the user generates in Flow (free on their plan) and drops files anywhere in
+  `input/keyframes/` — the agent maps and renames to roles. API mode: image generation
+  via MCP, each call behind a money gate. The agent **views every image** and
   critiques the set as a set — palette, subject, lighting coherence — because
-  cross-frame coherence is what makes the scrub feel continuous. `first` doubles as the
-  site's instant-load poster. Validation: each file exists and ffprobe decodes it as an
-  image. *Gate: approve the keyframe set.*
+  cross-frame coherence is what makes the scrub feel continuous. Validation: each file
+  exists and ffprobe decodes it as an image; the set must satisfy the plan recorded in
+  `prompts/` (a missing `last` is an incomplete step, not a done one). *Gate (light):
+  approve the keyframe set.*
 - **3 — Video** → `prompts/video.txt`. Veo 3.1-optimized prompt; names the Flow mode to
   use (Text / Image / Frames to Video / Ingredients) and references approved keyframes.
-  Prompt-craft rules encoded in SKILL.md (§9). Manual: generate in Flow, drop
-  `input/video.mp4`. API: MCP call; **any MCP failure falls back to manual with the same
-  prompt file** (fallback costs nothing by construction). Then `validate-media.mjs` runs.
-  *Gate: user has watched the clip and approves.*
-- **4 — Frame extraction.** `extract-frames.mjs input/video.mp4 site/frames/ --count N`
-  (extraction targets `site/frames/` directly even though scaffold runs later — avoids
-  copying 150 files; `scaffold-site` treats an existing `frames/` as data, never clobbers
-  it). Reports frame count, dimensions, total MB against a ~12 MB soft budget. The agent
-  views 2–3 sample frames to sanity-check visual quality. *Gate: approve payload + quality.*
+  Prompt-craft rules encoded in SKILL.md (§9). Manual: handoff card per the protocol;
+  any mp4/mov landing in `input/` is accepted (multiple → ask which). API: MCP call
+  behind a money gate; **any MCP failure falls back to manual with the same prompt
+  file** (fallback costs nothing by construction). Then `validate-media.mjs` runs.
+  *Gate (hard): user has watched the clip and approves.*
+- **4 — Frame extraction.** `extract-frames.mjs input/video.mp4 frames/ --count N`
+  into `<project>/frames/` — a plain data dir; `site/` does not exist yet, so nobody
+  can browse into a half-built site mid-flow (scaffold *moves* the dir in, step 5).
+  Reports count, dimensions, total MB against the chosen payload preset, plus
+  estimated load time on mid-4G. Then the **hold-frame review**: `holdFrames(holds,
+  count)` (§6) computes the exact frame each stop freezes on, and the agent **views
+  every one of them** — plus 2–3 spaced samples — checking for motion blur, bad crop,
+  mid-morph ugliness, and whether a scene chip's text stays legible over that frame.
+  A bad freeze gets fixed by *nudging the hold range* a few frames (a free config
+  change), never by regenerating. The agent also proposes the **poster**: the
+  strongest still it saw (often mid-clip for orbits), default frame 1.
+  *Gate (light): approve payload, quality, hold frames, poster.*
 - **5 — Site build.** Starts with an **art-direction pass**: the agent views 2–3
   extracted frames and derives the theme *from the actual scene* — palette sampled from
   the imagery (bg from the scene's darks, accent from its most saturated material,
   `surface` as a translucent scene-dark), material mood → `radius` and font stacks,
   per §6's UI-in-the-scene rules. This is what keeps buttons and captions on-theme with
-  the 3D world instead of generic UI. The agent then writes the creative-values JSON
-  (brief copy + derived theme) and runs `scaffold-site.mjs <project> --config values.json`.
-  The script copies the template verbatim, derives the `frames` block from what is
-  actually on disk (single source of truth), merges, validates (blocking on errors,
-  printing contrast warnings), writes `site/config.json` and the project README. No
-  separate gate — but the theme rationale (each token + one line of why, traced to the
-  frames) is presented alongside the preview URL at the step-6 gate.
-- **6 — Preview.** Any static server; documented default `npx serve site`. The agent
-  reminds the user what to check: scrub smoothness, overlay timing, mobile viewport.
-  *Gate: user scrolled it and it feels right.*
+  the 3D world instead of generic UI. The tokens + one line of rationale each (traced
+  to the frames) are shown **before anything is built** — theme is subjective and
+  costs seconds to iterate, so it gets its own stop. *Gate (light): approve or tweak
+  the theme tokens.* Then the agent writes the creative-values JSON (brief copy +
+  derived theme + `posterIndex`) and runs `scaffold-site.mjs <project> --config
+  values.json`: copies the template verbatim, **moves** `<project>/frames/` →
+  `site/frames/` (same-volume rename, zero copying), derives the `frames` block from
+  what is actually on disk (single source of truth), merges, validates (§6 severity
+  rules), writes `site/config.json` and the project README.
+- **6 — Preview.** Any static server; documented default `npx serve site`. The
+  check-list the agent hands the user: scrub smoothness, overlay timing, each stop's
+  feel, mobile viewport, and a **throttled reload** (DevTools → Slow 4G) so load
+  time is experienced, not imagined. *Gate (hard): user scrolled it and it feels
+  right.* A rejection here routes to the **cheapest re-entry point by name** — theme
+  tokens (re-scaffold, seconds), copy/stops/holds (edit values, re-scaffold, seconds),
+  payload (re-extract, ~a minute), video (step 3, costs a generation) — never an
+  undifferentiated "redo".
 - **7 — Deploy (instructions only).** Paste-ready commands for Vercel, Netlify, GitHub
   Pages. No deploy automation is built or owned by this project.
 
@@ -189,18 +256,28 @@ Steps:
   is exact count, even sampling, correct naming.
 
 ### scaffold-site.mjs `<projectDir> --config <values.json> [--force]`
-- Copies `template/` → `<projectDir>/site/` (existing `site/frames/` is preserved;
-  other existing template-owned files require `--force`).
-- Requires non-empty `site/frames/` (extraction precedes it in the flow); errors with a
-  clear message otherwise.
-- Derives `frames.count`, `frames.pattern`, `frames.poster` from disk; merges with the
-  creative values JSON; validates the merged config with the same `validateConfig` the
-  template uses (template file is the single schema authority); writes `site/config.json`
-  and `<projectDir>/README.md` (rerun commands). Exits nonzero listing errors; prints
-  warnings (e.g. AA contrast failures) without blocking.
+- Copies `template/` → `<projectDir>/site/` (existing template-owned files require
+  `--force`; re-scaffolding for a theme/copy tweak is the expected loop).
+- Frames: **moves** `<projectDir>/frames/` → `site/frames/` (same-volume `rename`,
+  zero copy). If `site/frames/` already exists (re-scaffold), it is preserved
+  untouched. Neither present and non-empty → clear error (extraction comes first).
+- Derives `frames.count` and `frames.pattern` from disk; `frames.poster` comes from
+  the creative values' `posterIndex` (default 1; error if outside `1..count`); merges;
+  validates with the same `validateConfig` the template uses (template file is the
+  single schema authority); writes `site/config.json` and `<projectDir>/README.md`
+  (rerun commands). Errors block with a list; warnings print without blocking.
 - Division of labor: creative translation (brief → values.json) is the agent's job —
   or a human's, in standalone use (documented example in README); deterministic assembly
   is the script's job.
+
+### status.mjs `<projectDir> [--json]`
+- Prints the resume report: per-step done / incomplete / stale, and the recommended
+  resume step — the deterministic backbone of §3's resume rules, so the wizard runs a
+  script instead of doing ad-hoc mtime math (and standalone users get a status command
+  for free).
+- Core is the pure `resolveResume(inventory)` (inventory = paths + mtimes + keyframe
+  plan parsed from `prompts/` filenames), unit-tested with synthetic inventories; the
+  filesystem walk is a thin seam.
 
 ## 6. Template and scrub engine
 
@@ -212,7 +289,7 @@ Steps:
   "theme":    {
     "bg": "#0a0a0a", "text": "#f5f5f5", "accent": "#e8ff47",
     "surface": "rgba(20, 20, 24, 0.55)", "radius": 10,
-    "fonts": { "display": "…", "body": "…" }
+    "fonts": { "display": "…", "body": "…", "displayFile": "fonts/display.woff2" }
   },
   "frames":   { "count": 150, "pattern": "frames/frame-{index:4}.webp", "poster": "frames/frame-0001.webp" },
   "scrub":    { "heightVh": 400, "smoothing": 0.12 },
@@ -228,7 +305,9 @@ Steps:
 
 `{index:4}` = 1-based index, zero-padded to 4. `smoothing` = per-frame lerp alpha at a
 60 fps reference (engine converts to a rate-independent decay constant). The
-creative-values JSON passed to scaffold is this schema minus the `frames` block.
+creative-values JSON passed to scaffold is this schema minus the `frames` block, plus
+`posterIndex` (1-based frame number that becomes `frames.poster`; default 1). It lives
+at `<project>/values.json` so staleness against `site/config.json` is checkable.
 
 **Stopped scenes (`hold`)**: an overlay with `"hold": true` freezes the video during its
 `at` range — the Apple pattern where motion pauses, a text/product callout lands, then
@@ -260,18 +339,30 @@ callouts, Zipline waypoint data).
   `backdrop-filter` blur + a 1px light-edge border — UI reads as glass floating in the
   scene (the canvas shows through), which is what makes it feel *inside* the world
   rather than pasted on. This chip treatment is the template's one signature element;
-  everything else stays quiet. Graceful without backdrop-filter support: opaque-enough
-  `surface` fallback.
+  everything else stays quiet. **Overlay text never sits raw on the canvas** — always
+  on a chip — and `surface` alpha has a floor of 0.45 (a `validateConfig` error below
+  it), because hex-vs-hex math can't see a busy video behind the text; the chip is the
+  structural guarantee, and the hold-frame review (step 4) is the perceptual check.
+  Graceful without backdrop-filter support: opaque-enough `surface` fallback.
 - `radius` and `fonts` carry the scene's material mood into the UI (sharp/technical →
   small radius + grotesque stack; soft/organic → pill radius + humanist or serif
-  stack). Fonts are free-form CSS font-family strings but **system stacks only** — the
-  site stays self-contained with zero font downloads (local font files: out of scope v1).
+  stack). Fonts are free-form CSS font-family strings, system stacks by default, plus
+  **at most one local display font**: `fonts.displayFile` names a `.woff2` the user (or
+  wizard instructions) placed at `site/fonts/` — the engine registers it via the
+  FontFace API (~6 lines), falling back to the `display` stack. Still zero network
+  requests; without a file, type-led moods are executed through weight, tracking,
+  case, and scale rather than pretending a system stack is Didot.
 - Buttons say what they do ("Buy the lamp", "See the specs") — active voice, sentence
   case, no "Learn more" filler. Copy is design material; SKILL.md carries this rule
   into the stops questionnaire.
-- Quality floor, non-negotiable: visible keyboard focus (accent ring) on every
-  interactive element; `prefers-reduced-motion` respected; text-on-bg and
-  CTA-label-on-surface must clear WCAG AA (see `contrastRatio` below).
+- Quality floor, non-negotiable and *enforced where computable*: visible keyboard
+  focus (accent ring) on every interactive element; `prefers-reduced-motion` gets the
+  static experience (below); AA contrast on deterministic pairs — `text` on `bg`, and
+  CTA label on `surface` alpha-composited over `bg` — is a `validateConfig` **error**
+  that blocks scaffold, not a warning. The agent picks the palette, so a blocked
+  scaffold is the agent adjusting tokens, never the user fighting the tool. What math
+  can't see (video behind a chip) is covered structurally (chips + alpha floor) and
+  perceptually (hold-frame review).
 
 ### scrub-core.js — pure, zero DOM, fully unit-tested
 
@@ -286,18 +377,30 @@ callouts, Zipline waypoint data).
 | `canvasSize(cssW, cssH, dpr, maxDpr = 2)` | backing-store `{width, height}`, DPR capped |
 | `frameFilename(index, pattern)` | expands `{index:N}` token, 1-based zero-pad |
 | `overlayOpacity(progress, [start, end], fade)` | 0→1 ramp over `fade` at each edge, 1 inside, 0 outside; `fade` defaults to `min(0.05, (end−start)/2)` |
-| `contrastRatio(hexA, hexB)` | WCAG 2.x relative-luminance contrast ratio (1–21); used by `validateConfig` to enforce the AA floor |
-| `validateConfig(obj)` | returns `{ errors, warnings }`, both typed and human-readable; valid = no errors. Error rules: every `at` within `[0, 1]` with `start < end`; hold ranges must not overlap each other or cover the entire `[0, 1]` range; CTA (overlay and outro alike) if present needs non-empty `label` and `href`; `stats` entries if present need non-empty `value` and `label`; theme colors parse as hex/rgba, `radius` a non-negative number. Warning rules: `theme.text` vs `theme.bg` or CTA label vs `surface`-over-`bg` contrast below 4.5:1; total frames outside 24–400 |
+| `holdFrames(holds, frameCount)` | the exact frame index each hold freezes on (its plateau's effective progress through `progressToFrame`) — drives the step-4 hold-frame review |
+| `recommendHeightVh(baseVh, holds)` | grows the page so motion pace stays constant: `baseVh × (1 + Σ hold spans)`, plus the between-stops speed-up factor for display |
+| `contrastRatio(colorA, colorB)` | WCAG 2.x relative-luminance contrast ratio (1–21), with rgba-over-bg compositing helper for `surface` |
+| `validateConfig(obj)` | returns `{ errors, warnings }`, both typed and human-readable; valid = no errors. **Errors:** every `at` within `[0, 1]` with `start < end`; hold ranges non-overlapping and not covering all of `[0, 1]`; CTA (overlay and outro) if present needs non-empty `label` and `href`; `stats` entries need non-empty `value` and `label`; theme colors parse as hex/rgba; `radius` non-negative; `surface` alpha ≥ 0.45; `fonts.displayFile` if present is a `.woff2` path; AA (4.5:1) on `text`/`bg` and on CTA label / `surface`-composited-over-`bg`. **Warnings:** total frames outside 24–400 |
 
 ### scrub-engine.js — DOM glue, untested by design
 
 Fetches `config.json` (fails loudly on `validateConfig` errors, console-warns on
-warnings), paints poster immediately,
-preloads all frames with a progress bar, rAF loop that redraws only when the smoothed
-frame index changes, ResizeObserver + DPR handling, initializes Lenis if `lenis.js` is
-present, honors `prefers-reduced-motion` (direct index mapping, no lerp, no Lenis).
-Frame index is computed from `applyHolds(rawProgress, holdRanges)`; overlay opacity from
-raw progress — that ordering is what makes text land while the scene stands still.
+warnings). Loading: the **poster frame loads first and paints immediately** (LCP is the
+chosen strong frame, not whatever frame 1 is), then the rest preload behind a quiet
+progress indicator — and **the page is scrollable the whole time**: copy, overlays, and
+outro are live while the canvas holds the poster, so a slow connection delays the
+scrub, never the site. rAF loop redraws only when the smoothed frame index changes;
+ResizeObserver + DPR handling; Lenis initialized if `lenis.js` is present; registers
+`fonts.displayFile` via the FontFace API when set. Frame index is computed from
+`applyHolds(rawProgress, holdRanges)`; overlay opacity from raw progress — that
+ordering is what makes text land while the scene stands still.
+
+**Reduced motion = the static experience, not a tamer scrub.** Under
+`prefers-reduced-motion` the engine skips frame preloading entirely (≈ the whole
+payload saved), renders the poster as a fixed hero, and the template lays the overlays
+out as ordinary stacked sections flowing into the outro — the content without the
+motion, which is what that preference is asking for.
+
 Covered by the preview gate and integration file-level assertions, not unit tests.
 
 ### index.html / style.css
@@ -319,25 +422,34 @@ is out of scope).
     hold boundaries, monotonicity, 0→0 / 1→1, multiple holds, and validation rejection
     of overlapping/out-of-range holds, malformed CTAs (missing/empty label or href),
     and malformed stats entries;
-    `contrastRatio`: black/white = 21, same color = 1, a known mid pair, and
-    `validateConfig` emitting a contrast warning for a failing theme while still
-    returning zero errors;
+    `contrastRatio`: black/white = 21, same color = 1, a known mid pair, rgba-over-bg
+    compositing, and `validateConfig` **erroring** on an AA-failing theme and on
+    `surface` alpha < 0.45;
+    `holdFrames`: freeze-frame indices for zero/one/many holds, edges;
+    `recommendHeightVh`: no holds = base, spans sum correctly, speed-up factor;
+  - `resolveResume` with synthetic inventories: fresh chain, missing plan role
+    (incomplete), video newer than frames (stale), brief newer than config (stale),
+    keyframes newer than video (report-only);
   - `videoVerdict` / `imageVerdict` fed canned ffprobe JSON (valid, warning-laden,
     garbage);
   - `extract-frames` arg parsing, `framePlan` (exact count, even spacing, midpoint
-    offsets), budget summary math;
-  - `scaffold-site` config merge + frames-block derivation (against a temp dir).
+    offsets), budget summary + 4G load-estimate math;
+  - `scaffold-site` config merge, frames-block derivation, frames-dir move semantics,
+    and `posterIndex` range validation (against a temp dir).
 - **Integration (requires ffmpeg; suite self-skips with a clear message when absent):**
   1. `beforeAll`: generate fixture `ffmpeg -f lavfi -i testsrc=duration=2:size=320x240:rate=15`
      (no binary committed).
   2. `validate-media` on it → valid, expected warnings (< 1080p).
   3. `validate-media` on a text file renamed `.mp4` → exit 2, readable error.
-  4. `extract-frames --count 24` → exactly 24 files `frame-0001..0024.webp`, all
-     nonzero size.
-  5. `scaffold-site` with a sample values.json → `site/` contains every template file;
-     `config.json` parses; `frames.count === 24`; expanding `frames.pattern` for
-     indices 1 and 24 resolves to files that exist; `index.html` references the engine
-     and config.
+  4. `extract-frames --count 24` into `<project>/frames/` → exactly 24 files
+     `frame-0001..0024.webp`, all nonzero size.
+  5. `scaffold-site` with a sample values.json (incl. `posterIndex: 12`) → `site/`
+     contains every template file; `<project>/frames/` is gone and `site/frames/` has
+     the 24; `config.json` parses; `frames.count === 24`; `frames.poster` resolves to
+     frame 12; expanding `frames.pattern` for indices 1 and 24 resolves to files that
+     exist; `index.html` references the engine and config.
+  6. `status` on the finished project → all steps done; touch the fixture mp4 to be
+     newer than `site/frames/` → extraction reported stale.
 - **Template/scripts are written once and tested** — the skill copies and configures
   them per project, never regenerates them. Tests import the actual shipped files
   (`template/scrub-core.js`, script exports), not copies.
@@ -434,8 +546,11 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
 | Failure | Behavior |
 |---|---|
 | ffmpeg/ffprobe missing | Preflight stops with per-OS install instructions (winget/brew/apt) |
-| `input/` has no mp4 | Wait state: remind user where to drop the file |
+| `input/` has no mp4 | Re-show the handoff card, end turn (manual protocol §4) |
 | `input/` has multiple mp4s | Ask the user which one; never guess |
+| AA contrast error / surface alpha < 0.45 | Scaffold blocks; the agent adjusts theme tokens and re-runs (user never fights it) |
+| `posterIndex` outside `1..count` | Scaffold error |
+| Artifact stale on resume (§3) | Free steps re-run automatically; money steps reported + asked |
 | Corrupt / fake mp4 (HTML saved as .mp4) | `validate-media` exit 2 with one-line cause |
 | Non-empty extraction outDir | Refuse without `--force` |
 | MCP unavailable/fails in api mode | Fall back to manual with the same prompt file |
@@ -448,12 +563,14 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
 Progressive/adaptive frame loading, multi-resolution frame sets, multiple template
 themes (one template, config-themed), AVIF, deploy automation, custom preview server,
 state files, npm publishing (layout ready only), Codex `openai.yaml` metadata,
-browser-based E2E tests, local font files (system stacks only in v1), image slots in
-overlays (the video is the product shot), ambient audio / sound toggle (a Valentime
-signature, but out of scope).
+browser-based E2E tests, webfont fetching/subsetting (one user-supplied local `.woff2`
+IS supported), image slots in overlays (the video is the product shot), ambient audio /
+sound toggle (a Valentime signature, but out of scope), mechanical API spend-lock (a
+wrapper owning MCP generation calls — gates are instruction-enforced in v1).
 
 ## 12. Deferred to implementation plan
 
 Exact ffmpeg invocation for exact-N extraction (N seeks vs select filter), webp encoder
 options, Lenis version to vendor and pin, SKILL.md description wording, vitest config
-details.
+details, the 4G throughput constant used in load estimates, exact payload-preset
+numbers.
