@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import {
   mkdir,
   rm,
+  rmdir,
   stat,
 } from 'node:fs/promises';
 import {
@@ -14,7 +15,7 @@ import {
   resolve,
 } from 'node:path';
 import { promisify } from 'node:util';
-import { hasFlag, isDirect, valueAfter } from './lib/cli.mjs';
+import { hasFlag, isDirect } from './lib/cli.mjs';
 import {
   directoryNonEmpty,
   listFilesRecursive,
@@ -43,6 +44,7 @@ function boundedInteger(value, name, minimum, maximum) {
 
 export function parseExtractArgs(argv) {
   const positional = [];
+  const values = new Map();
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--force') continue;
@@ -53,6 +55,10 @@ export function parseExtractArgs(argv) {
       if (index === argv.length - 1 || argv[index + 1].startsWith('--')) {
         throw new Error(`Missing value for ${argument}`);
       }
+      if (values.has(argument)) {
+        throw new Error(`Duplicate option: ${argument}`);
+      }
+      values.set(argument, argv[index + 1]);
       index += 1;
       continue;
     }
@@ -62,7 +68,7 @@ export function parseExtractArgs(argv) {
     throw new Error('Expected an input video and output directory.');
   }
 
-  const format = valueAfter(argv, '--format', 'webp');
+  const format = values.get('--format') ?? 'webp';
   if (!['webp', 'jpg'].includes(format)) {
     throw new Error('format must be webp or jpg.');
   }
@@ -70,10 +76,10 @@ export function parseExtractArgs(argv) {
   return {
     input: positional[0],
     outDir: positional[1],
-    count: boundedInteger(valueAfter(argv, '--count', '150'), 'count', 1, 9999),
-    width: boundedInteger(valueAfter(argv, '--width', '1600'), 'width', 16, 8192),
+    count: boundedInteger(values.get('--count') ?? '150', 'count', 1, 9999),
+    width: boundedInteger(values.get('--width') ?? '1600', 'width', 16, 8192),
     format,
-    quality: boundedInteger(valueAfter(argv, '--quality', '80'), 'quality', 1, 100),
+    quality: boundedInteger(values.get('--quality') ?? '80', 'quality', 1, 100),
     force: hasFlag(argv, '--force'),
   };
 }
@@ -170,6 +176,7 @@ export async function main(
   argv = process.argv.slice(2),
   io = console,
   runner = execFileAsync,
+  fileOperations = {},
 ) {
   let options;
   try {
@@ -214,6 +221,8 @@ export async function main(
     parent,
     '.' + basename(target) + '.tmp-' + randomUUID(),
   );
+  let replacement;
+  let summary;
   try {
     await mkdir(parent, { recursive: true });
     await mkdir(prepared);
@@ -226,28 +235,55 @@ export async function main(
     }));
 
     const frames = await inspectOutputFrames(prepared, options, runner);
-    const summary = summarizeFrames(frames, options);
-    await replaceDirectory(
+    summary = summarizeFrames(frames, options);
+    if (targetExists && !options.force) {
+      const removeEmptyDirectory = fileOperations.removeEmptyDirectory ?? rmdir;
+      try {
+        await removeEmptyDirectory(target);
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+    }
+    replacement = await replaceDirectory(
       prepared,
       target,
-      options.force || targetExists,
+      options.force,
+      fileOperations.replacementOperations,
     );
-
-    io.log(JSON.stringify(summary, null, 2));
-    if (summary.overBudget) {
-      io.warn(
-        'Warning: extracted frames exceed the '
-        + Math.round(summary.budgetBytes / 1024 / 1024)
-        + ' MiB budget.',
-      );
-    }
-    return 0;
   } catch (error) {
     io.error('Extraction failed: ' + firstLine(error));
     return 2;
   } finally {
     await rm(prepared, { recursive: true, force: true });
   }
+
+  try {
+    io.log(JSON.stringify(summary, null, 2));
+  } catch {
+    // Reporting cannot change the result of an already committed replacement.
+  }
+  const warnings = [];
+  if (replacement.cleanupError) {
+    warnings.push(
+      'Warning: frames were replaced, but the old backup could not be removed: '
+      + replacement.backupPath + ' (' + firstLine(replacement.cleanupError) + ').',
+    );
+  }
+  if (summary.overBudget) {
+    warnings.push(
+      'Warning: extracted frames exceed the '
+      + Math.round(summary.budgetBytes / 1024 / 1024)
+      + ' MiB budget.',
+    );
+  }
+  for (const warning of warnings) {
+    try {
+      io.warn(warning);
+    } catch {
+      // Reporting cannot change the result of an already committed replacement.
+    }
+  }
+  return 0;
 }
 
 if (isDirect(import.meta.url)) {

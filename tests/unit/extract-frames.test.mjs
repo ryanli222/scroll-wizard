@@ -4,6 +4,7 @@ import {
   readFile,
   readdir,
   rm,
+  rmdir,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -96,6 +97,20 @@ describe('frame extraction planning', () => {
     expect(() => parseExtractArgs(['in.mp4', 'frames', '--count'])).toThrow(/--count/);
     expect(() => parseExtractArgs(['in.mp4', 'frames', '--wat'])).toThrow(/--wat/);
   });
+
+  it.each([
+    ['--count', '2', '3'],
+    ['--width', '16', '17'],
+    ['--format', 'webp', 'jpg'],
+    ['--quality', '2', '3'],
+  ])(
+    'rejects duplicate value option %s',
+    (flag, first, second) => {
+      expect(() => parseExtractArgs([
+        'in.mp4', 'frames', flag, first, flag, second,
+      ])).toThrow(new RegExp('duplicate.*' + flag, 'i'));
+    },
+  );
 
   it('uses one shifted fps filter and caps WebP output count', () => {
     expect(buildFfmpegArgs({
@@ -209,6 +224,20 @@ describe('shared file helpers', () => {
     await expect(directoryNonEmpty(join(root, 'missing'))).resolves.toBe(false);
   });
 
+  it('uses lstat existence semantics and propagates inspection errors', async () => {
+    const present = vi.fn().mockResolvedValue({ isSymbolicLink: () => true });
+    const missing = vi.fn().mockRejectedValue(
+      Object.assign(new Error('missing'), { code: 'ENOENT' }),
+    );
+    const denied = vi.fn().mockRejectedValue(
+      Object.assign(new Error('denied'), { code: 'EACCES' }),
+    );
+
+    await expect(pathExists('dangling-link', present)).resolves.toBe(true);
+    await expect(pathExists('missing', missing)).resolves.toBe(false);
+    await expect(pathExists('private', denied)).rejects.toMatchObject({ code: 'EACCES' });
+  });
+
   it('lists nested files in stable relative-path order', async () => {
     const root = await temporaryRoot();
     await mkdir(join(root, 'z'));
@@ -263,6 +292,32 @@ describe('shared file helpers', () => {
     await expect(readFile(join(target, 'old.webp'), 'utf8')).resolves.toBe('old');
     expect(await readdir(root)).toEqual(['frames']);
   });
+
+  it('commits replacement and preserves the backup when backup cleanup fails', async () => {
+    const root = await temporaryRoot('scroll-wizard-replace-');
+    const target = join(root, 'frames');
+    const prepared = join(root, 'prepared');
+    await mkdir(target);
+    await mkdir(prepared);
+    await writeFile(join(target, 'old.webp'), 'old');
+    await writeFile(join(prepared, 'new.webp'), 'new');
+    const cleanupError = Object.assign(new Error('backup locked'), { code: 'EPERM' });
+    const remove = vi.fn(async (path, options) => {
+      if (path.startsWith(target + '.backup-')) throw cleanupError;
+      return rm(path, options);
+    });
+
+    const result = await replaceDirectory(prepared, target, true, { remove });
+
+    expect(result).toMatchObject({
+      committed: true,
+      backupPath: expect.stringContaining('frames.backup-'),
+      cleanupError,
+    });
+    await expect(readFile(join(target, 'new.webp'), 'utf8')).resolves.toBe('new');
+    await expect(readFile(join(result.backupPath, 'old.webp'), 'utf8'))
+      .resolves.toBe('old');
+  });
 });
 
 const inputProbe = {
@@ -298,6 +353,8 @@ function fakeExtractionRunner({
   extra = false,
   failFfmpeg = false,
   failFrameProbe = false,
+  wrongName = false,
+  afterFrames,
   probe = inputProbe,
 } = {}) {
   return vi.fn(async (command, args) => {
@@ -318,14 +375,21 @@ function fakeExtractionRunner({
     const last = omitLast ? count - 1 : count;
     for (let index = 1; index <= last; index += 1) {
       const length = zeroFirst && index === 1 ? 0 : bytes;
+      const output = wrongName && index === last
+        ? join(
+          dirname(outputPattern),
+          'frame-9999.' + (outputPattern.endsWith('.jpg') ? 'jpg' : 'webp'),
+        )
+        : outputPattern.replace('%04d', String(index).padStart(4, '0'));
       await writeFile(
-        outputPattern.replace('%04d', String(index).padStart(4, '0')),
+        output,
         Buffer.alloc(length, 1),
       );
     }
     if (extra) {
       await writeFile(join(dirname(outputPattern), 'stale.webp'), 'extra');
     }
+    await afterFrames?.();
     return { stdout: '', stderr: '' };
   });
 }
@@ -450,6 +514,7 @@ describe('frame extraction CLI', () => {
     ['missing tail', { omitLast: true }, /exactly 2 contiguous/],
     ['zero-byte frame', { zeroFirst: true }, /nonzero/],
     ['unexpected extra file', { extra: true }, /exactly 2 contiguous/],
+    ['equal count with wrong filename', { wrongName: true }, /exactly 2 contiguous/],
   ])('rejects %s and cleans preparation while retaining old output', async (
     _name,
     runnerOptions,
@@ -507,5 +572,110 @@ describe('frame extraction CLI', () => {
 
     expect(JSON.parse(io.log.mock.calls[0][0]).overBudget).toBe(true);
     expect(io.warn.mock.calls[0][0]).toMatch(/budget/i);
+  });
+
+  it('preserves content added to an initially empty output during extraction', async () => {
+    const root = await temporaryRoot('scroll-wizard-extract-');
+    const input = join(root, 'input.mp4');
+    const outDir = join(root, 'frames');
+    await writeFile(input, 'video');
+    await mkdir(outDir);
+    const runner = fakeExtractionRunner({
+      input,
+      count: 1,
+      afterFrames: () => writeFile(join(outDir, 'arrived.txt'), 'keep'),
+    });
+
+    expect(await main([
+      input, outDir, '--count', '1',
+    ], fakeIo(), runner)).toBe(2);
+
+    await expect(readFile(join(outDir, 'arrived.txt'), 'utf8')).resolves.toBe('keep');
+    expect(await readdir(outDir)).toEqual(['arrived.txt']);
+    expect(await readdir(root)).toEqual(['frames', 'input.mp4']);
+  });
+
+  it('refuses a target recreated after final empty-directory removal', async () => {
+    const root = await temporaryRoot('scroll-wizard-extract-');
+    const input = join(root, 'input.mp4');
+    const outDir = join(root, 'frames');
+    await writeFile(input, 'video');
+    await mkdir(outDir);
+    const runner = fakeExtractionRunner({ input, count: 1 });
+    const removeEmptyDirectory = vi.fn(async (path) => {
+      await rmdir(path);
+      await mkdir(path);
+      await writeFile(join(path, 'recreated.txt'), 'keep');
+    });
+
+    expect(await main(
+      [input, outDir, '--count', '1'],
+      fakeIo(),
+      runner,
+      { removeEmptyDirectory },
+    )).toBe(2);
+
+    expect(removeEmptyDirectory).toHaveBeenCalledWith(outDir);
+    await expect(readFile(join(outDir, 'recreated.txt'), 'utf8')).resolves.toBe('keep');
+    expect(await readdir(outDir)).toEqual(['recreated.txt']);
+  });
+
+  it('returns success and warns with the preserved backup path on cleanup failure', async () => {
+    const root = await temporaryRoot('scroll-wizard-extract-');
+    const input = join(root, 'input.mp4');
+    const outDir = join(root, 'frames');
+    await writeFile(input, 'video');
+    await mkdir(outDir);
+    await writeFile(join(outDir, 'old.webp'), 'old');
+    const runner = fakeExtractionRunner({ input, count: 1 });
+    const io = fakeIo();
+    const remove = vi.fn(async (path, options) => {
+      if (path.startsWith(outDir + '.backup-')) {
+        throw Object.assign(new Error('backup locked'), { code: 'EPERM' });
+      }
+      return rm(path, options);
+    });
+
+    expect(await main(
+      [input, outDir, '--count', '1', '--force'],
+      io,
+      runner,
+      { replacementOperations: { remove } },
+    )).toBe(0);
+
+    expect(await readdir(outDir)).toEqual(['frame-0001.webp']);
+    const backup = (await readdir(root)).find((name) => name.startsWith('frames.backup-'));
+    expect(backup).toBeDefined();
+    await expect(readFile(join(root, backup, 'old.webp'), 'utf8')).resolves.toBe('old');
+    expect(io.warn.mock.calls.flat().join('\n')).toContain(join(root, backup));
+    expect(io.error).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['JSON output', 3, (io) => io.log.mockImplementation(() => {
+      throw new Error('log failed');
+    })],
+    ['budget warning', 13 * 1024 * 1024, (io) => io.warn.mockImplementation(() => {
+      throw new Error('warn failed');
+    })],
+  ])('does not turn a committed extraction into failure when %s throws', async (
+    _name,
+    bytes,
+    breakReporter,
+  ) => {
+    const root = await temporaryRoot('scroll-wizard-extract-');
+    const input = join(root, 'input.mp4');
+    const outDir = join(root, 'frames');
+    await writeFile(input, 'video');
+    const runner = fakeExtractionRunner({ input, count: 1, bytes });
+    const io = fakeIo();
+    breakReporter(io);
+
+    expect(await main([
+      input, outDir, '--count', '1',
+    ], io, runner)).toBe(0);
+
+    expect(await readdir(outDir)).toEqual(['frame-0001.webp']);
+    expect(io.error).not.toHaveBeenCalled();
   });
 });

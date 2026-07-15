@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  access,
+  lstat,
   mkdir,
   open,
   readFile,
@@ -27,12 +27,13 @@ export async function sha256File(path) {
   return createHash('sha256').update(await readFile(path)).digest('hex');
 }
 
-export async function pathExists(path) {
+export async function pathExists(path, inspect = lstat) {
   try {
-    await access(path);
+    await inspect(path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
   }
 }
 
@@ -84,24 +85,31 @@ export async function writeJsonAtomic(path, value) {
   await rename(temporary, path);
 }
 
-export async function replaceDirectory(prepared, target, force) {
+export async function replaceDirectory(
+  prepared,
+  target,
+  force,
+  operations = {},
+) {
+  const renamePath = operations.rename ?? rename;
+  const remove = operations.remove ?? rm;
   const targetExists = await pathExists(target);
   if (targetExists && !force) {
     throw new Error(`Target already exists; use --force to replace it: ${target}`);
   }
   if (!targetExists) {
-    await rename(prepared, target);
-    return;
+    await renamePath(prepared, target);
+    return { committed: true };
   }
 
   const backup = target + '.backup-' + randomUUID();
-  await rename(target, backup);
+  await renamePath(target, backup);
   try {
-    await rename(prepared, target);
+    await renamePath(prepared, target);
   } catch (error) {
     try {
-      await rm(target, { recursive: true, force: true });
-      await rename(backup, target);
+      await remove(target, { recursive: true, force: true });
+      await renamePath(backup, target);
     } catch (rollbackError) {
       throw new AggregateError(
         [error, rollbackError],
@@ -110,5 +118,15 @@ export async function replaceDirectory(prepared, target, force) {
     }
     throw error;
   }
-  await rm(backup, { recursive: true, force: true });
+
+  try {
+    await remove(backup, { recursive: true, force: true });
+    return { committed: true };
+  } catch (cleanupError) {
+    return {
+      committed: true,
+      backupPath: backup,
+      cleanupError,
+    };
+  }
 }
