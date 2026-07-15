@@ -218,6 +218,7 @@ Steps:
   "overlays": [
     { "at": [0.05, 0.25], "title": "…", "body": "…" },
     { "at": [0.35, 0.55], "title": "…", "body": "…", "hold": true, "position": "left",
+      "stats": [ { "value": "…", "label": "…" } ],
       "cta": { "label": "…", "href": "…" } }
   ],
   "outro":    { "headline": "…", "body": "…", "cta": { "label": "…", "href": "#" } }
@@ -243,6 +244,12 @@ requires the pointer-events split: the overlay layer is `pointer-events: none` (
 scrolling over the canvas never snags), interactive elements inside it are
 `pointer-events: auto`. A stop with a product callout + buy button is the intended
 Apple-style use.
+
+**Overlay stats**: optional `"stats": [ { "value", "label" } ]` — a quiet row of
+value+label chips inside the scene chip (battery hours, CO₂ per delivery, price). This
+is the Tesla-configurator move adapted to scroll: the product holds center-stage while a
+side-positioned panel presents its numbers and a CTA. Both registers use it (Apple spec
+callouts, Zipline waypoint data).
 
 **UI-in-the-scene rules** (how buttons and captions stay on-theme with the 3D world):
 
@@ -279,7 +286,7 @@ Apple-style use.
 | `frameFilename(index, pattern)` | expands `{index:N}` token, 1-based zero-pad |
 | `overlayOpacity(progress, [start, end], fade)` | 0→1 ramp over `fade` at each edge, 1 inside, 0 outside; `fade` defaults to `min(0.05, (end−start)/2)` |
 | `contrastRatio(hexA, hexB)` | WCAG 2.x relative-luminance contrast ratio (1–21); used by `validateConfig` to enforce the AA floor |
-| `validateConfig(obj)` | returns `{ errors, warnings }`, both typed and human-readable; valid = no errors. Error rules: every `at` within `[0, 1]` with `start < end`; hold ranges must not overlap each other or cover the entire `[0, 1]` range; CTA (overlay and outro alike) if present needs non-empty `label` and `href`; theme colors parse as hex/rgba, `radius` a non-negative number. Warning rules: `theme.text` vs `theme.bg` or CTA label vs `surface`-over-`bg` contrast below 4.5:1; total frames outside 24–400 |
+| `validateConfig(obj)` | returns `{ errors, warnings }`, both typed and human-readable; valid = no errors. Error rules: every `at` within `[0, 1]` with `start < end`; hold ranges must not overlap each other or cover the entire `[0, 1]` range; CTA (overlay and outro alike) if present needs non-empty `label` and `href`; `stats` entries if present need non-empty `value` and `label`; theme colors parse as hex/rgba, `radius` a non-negative number. Warning rules: `theme.text` vs `theme.bg` or CTA label vs `surface`-over-`bg` contrast below 4.5:1; total frames outside 24–400 |
 
 ### scrub-engine.js — DOM glue, untested by design
 
@@ -296,7 +303,8 @@ Covered by the preview gate and integration file-level assertions, not unit test
 
 Sticky full-viewport canvas inside a `scrub.heightVh`-tall section; overlay captions
 absolutely positioned (position classes: center/left/right), opacity driven by
-`overlayOpacity`, optional CTA button per overlay (pointer-events split per §above);
+`overlayOpacity`, optional stats chips and CTA button per overlay (pointer-events split
+per §above);
 outro section (headline, body, CTA button) and minimal footer; theme colors applied
 from config as CSS custom properties. Loading strategy v1: preload-all + poster-first paint (progressive loading
 is out of scope).
@@ -308,7 +316,8 @@ is out of scope).
     math, DPR caps, opacity ramps, pattern expansion, config validation errors;
     `applyHolds`: identity with no holds, exact plateau across each hold, continuity at
     hold boundaries, monotonicity, 0→0 / 1→1, multiple holds, and validation rejection
-    of overlapping/out-of-range holds and malformed CTAs (missing/empty label or href);
+    of overlapping/out-of-range holds, malformed CTAs (missing/empty label or href),
+    and malformed stats entries;
     `contrastRatio`: black/white = 21, same color = 1, a known mid pair, and
     `validateConfig` emitting a contrast warning for a failing theme while still
     returning zero errors;
@@ -363,6 +372,20 @@ and Grok Build (see §2 install junctions). Consequences for how SKILL.md is wri
     planned as waypoints at intake.
   These are registers to reason from, not sites to copy — palette and type still derive
   from this brief's own scene (§6).
+- **Mood vocabulary for the art-direction pass** (register = narrative shape; mood =
+  surface treatment; the pass may blend, always traced to this brief's frames):
+  - *Quiet premium* (Apple) — near-black or near-white field, type-led, one accent.
+  - *Data journey* (Zipline) — stats as protagonists, cartographic restraint.
+  - *Glossy object-world* (Nothin', noth.in) — playful tactile 3D materials (foil,
+    balloon, candy-wrap), bold statement type with generous spacing; suits expressive
+    briefs where the subject IS a rendered object.
+  - *Engineer minimal* (haoqi.design) — monochrome + one selective accent, utility
+    type, ambient metadata as texture (coordinates, timestamps, frame counter) — the
+    frame counter is already honest data the scrub engine has.
+  - *Configurator stop* (Tesla) — a stopped scene treated as a spec panel: product
+    centered, side panel with `stats` rows and a decisive CTA.
+  Intake's vibe question offers this vocabulary; the stops questionnaire offers `stats`
+  whenever a stop is a product highlight or waypoint.
 - **One continuous shot, no cuts** — a scene cut destroys the scrub illusion; this is
   the single most important constraint and appears in every video prompt.
 - Slow, constant-velocity camera motion matched to the brief's motion type; 6–8 s
