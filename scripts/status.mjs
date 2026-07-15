@@ -478,11 +478,11 @@ function stateForGate(gate, inventory, report) {
   const step = GATES.indexOf(gate) + 1;
   const incomplete = inventory.incomplete.some((item) => stepFor(item) === step);
   if (incomplete || !inventory.manifests[gate]) return 'incomplete';
+  const stale = inventory.stale.some((item) => stepFor(item) === step);
+  if (stale) return 'stale';
   if (report.unapproved.includes(gate)) {
     return inventory.receipts[gate] ? 'needs re-review' : 'ready-unapproved';
   }
-  const stale = inventory.stale.some((item) => stepFor(item) === step);
-  if (stale) return 'stale';
   return 'done';
 }
 

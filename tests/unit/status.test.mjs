@@ -614,6 +614,32 @@ describe('filesystem inventory and approvals', () => {
 });
 
 describe('status CLI', () => {
+  it('prints stale before ready-unapproved when a receipt is missing', async () => {
+    const projectDir = await createCompleteProject();
+    const future = new Date(Date.now() + 10_000);
+    await utimes(join(projectDir, 'input', 'video.mp4'), future, future);
+    const io = fakeIo();
+
+    expect(await main([projectDir], io)).toBe(0);
+    const output = io.log.mock.calls.flat().join('\n');
+    expect(output).toContain('4. extraction: stale');
+    expect(output).not.toContain('4. extraction: ready-unapproved');
+  });
+
+  it('prints stale before needs re-review when the receipt chain is invalid', async () => {
+    const projectDir = await createCompleteProject();
+    for (const gate of GATES) await approveGate(projectDir, gate);
+    await writeFile(join(projectDir, 'brief.md'), '# Changed brief\n');
+    const future = new Date(Date.now() + 10_000);
+    await utimes(join(projectDir, 'input', 'video.mp4'), future, future);
+    const io = fakeIo();
+
+    expect(await main([projectDir], io)).toBe(0);
+    const output = io.log.mock.calls.flat().join('\n');
+    expect(output).toContain('4. extraction: stale');
+    expect(output).not.toContain('4. extraction: needs re-review');
+  });
+
   it('prints missing artifacts as incomplete even when their chain is invalid', async () => {
     const projectDir = await temporaryProject();
     const io = fakeIo();
