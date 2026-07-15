@@ -166,12 +166,12 @@ const trustedOrigin = 'https://scroll-wizard.invalid';
 function decodedVariants(value) {
   const variants = [value];
   let current = value;
-  while (/%[0-9a-f]{2}/i.test(current)) {
+  while (current.includes('%')) {
     let decoded;
     try {
       decoded = decodeURIComponent(current);
     } catch {
-      break;
+      return null;
     }
     if (decoded === current) break;
     variants.push(decoded);
@@ -181,7 +181,9 @@ function decodedVariants(value) {
 }
 
 function hasUnsafePathSyntax(value, rejectCurrentSegments = false) {
-  return decodedVariants(value).some((candidate) => {
+  const variants = decodedVariants(value);
+  if (!variants) return true;
+  return variants.some((candidate) => {
     const path = candidate.split(/[?#]/, 1)[0];
     return candidate.trim() !== candidate
       || /[\u0000-\u001f\\]/.test(candidate)
