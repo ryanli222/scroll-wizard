@@ -410,6 +410,28 @@ describe('scaffold-site CLI', () => {
     expect(io.warn).toHaveBeenCalledWith(expect.stringContaining('theme.fonts.displayFile'));
   });
 
+  it('lists every validateConfig error, not just the first, then rolls back', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedFreshFrames(projectDir, ['frame-0001.webp']);
+    // Two independent failures at once: bad surface alpha and a bad CTA href.
+    await writeValues(projectDir, {
+      ...creativeValues,
+      theme: { surface: 'rgba(0, 0, 0, 0.1)' },
+      outro: { cta: { label: 'Buy', href: 'javascript:alert(1)' } },
+    });
+    const io = fakeIo();
+
+    expect(await main([
+      projectDir, '--config', join(projectDir, 'values.json'),
+    ], io, templateDir)).toBe(1);
+
+    const errorLines = io.error.mock.calls.map((call) => call[0]);
+    expect(errorLines.some((line) => line.includes('surface'))).toBe(true);
+    expect(errorLines.some((line) => line.includes('cta.href'))).toBe(true);
+    expect(await readdir(projectDir)).toEqual(['frames', 'values.json']);
+  });
+
   it('returns 1 and reports usage or failure without throwing', async () => {
     const io = fakeIo();
     expect(await main([], io)).toBe(1);

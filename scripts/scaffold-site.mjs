@@ -331,7 +331,12 @@ export async function main(
     }
     return 0;
   } catch (error) {
-    io.error('Scaffold failed: ' + firstLine(error));
+    // Print every line: a validateConfig failure carries one "path: message"
+    // entry per line, and the caller must see the full list, not just the first.
+    io.error('Scaffold failed:');
+    for (const line of String(error?.message ?? error).split(/\r?\n/)) {
+      io.error('  ' + line);
+    }
     return 1;
   }
 }
