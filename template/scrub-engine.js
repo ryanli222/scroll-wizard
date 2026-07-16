@@ -150,6 +150,7 @@ class FrameStore {
     this.warned = new Set();
     this.bitmaps = new Map();
     this.pendingBitmaps = new Map();
+    this.pendingFetches = new Map();
     this.desired = new Set();
     this.radius = 12;
     this.loaded = 0;
@@ -159,19 +160,28 @@ class FrameStore {
     return frameFilename(index, this.config.frames.pattern);
   }
 
-  async fetchOne(index) {
-    if (this.blobs[index] || this.failed.has(index)) return;
-    try {
-      const response = await fetch(this.url(index));
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      this.blobs[index] = await response.blob();
-    } catch (error) {
-      this.failed.add(index);
-      this.warnOnce(index, error);
-    } finally {
-      this.loaded += 1;
-      this.onProgress(this.loaded / this.config.frames.count);
-    }
+  fetchOne(index) {
+    if (this.blobs[index] || this.failed.has(index)) return Promise.resolve();
+    // In-flight dedupe: preloadAll and ensureBitmap can request the same
+    // index concurrently; without this, this.loaded would increment once
+    // per call instead of once per unique frame.
+    if (this.pendingFetches.has(index)) return this.pendingFetches.get(index);
+    const promise = (async () => {
+      try {
+        const response = await fetch(this.url(index));
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        this.blobs[index] = await response.blob();
+      } catch (error) {
+        this.failed.add(index);
+        this.warnOnce(index, error);
+      } finally {
+        this.pendingFetches.delete(index);
+        this.loaded += 1;
+        this.onProgress(this.loaded / this.config.frames.count);
+      }
+    })();
+    this.pendingFetches.set(index, promise);
+    return promise;
   }
 
   warnOnce(index, error) {
@@ -389,7 +399,7 @@ async function start() {
 
     const { errors, warnings } = validateConfig(config);
     if (errors.length) {
-      throw new Error(errors.map((entry) => entry.message).join(' '));
+      throw new Error(errors.map((entry) => entry.message).join('\n'));
     }
     if (warnings.length) {
       console.warn('Config warnings: ' + warnings.map((entry) => entry.message).join(' '));
@@ -410,7 +420,11 @@ async function start() {
   }
 
   if (globalThis.Lenis) {
-    new globalThis.Lenis({ autoRaf: true, anchors: true });
+    try {
+      new globalThis.Lenis({ autoRaf: true, anchors: true });
+    } catch (error) {
+      console.warn('Lenis failed to initialize:', error.message);
+    }
   }
 
   runEngine(config, overlayNodes);
