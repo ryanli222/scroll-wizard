@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import { extname, join, parse } from 'node:path';
 
@@ -488,7 +490,13 @@ function stateForGate(gate, inventory, report) {
 
 function printHuman(inventory, report, io) {
   GATES.forEach((gate, index) => {
-    io.log((index + 1) + '. ' + gate + ': ' + stateForGate(gate, inventory, report));
+    const state = stateForGate(gate, inventory, report);
+    // inventory.stale never contains the literal 'theme' gate name -- a
+    // 'stale' state on the theme line is always driven by 'site' staleness
+    // (frames/config outrunning the scaffolded site). Label it as such so
+    // it doesn't read as the theme config itself being stale.
+    const label = gate === 'theme' && state === 'stale' ? 'theme (site build)' : gate;
+    io.log((index + 1) + '. ' + label + ': ' + state);
   });
   io.log('Resume at step ' + report.resumeStep + '.');
 }

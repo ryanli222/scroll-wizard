@@ -17,6 +17,7 @@ const poster = document.getElementById('poster');
 const canvas = document.getElementById('scrub-canvas');
 const overlayLayer = document.getElementById('overlay-layer');
 const loadProgress = document.getElementById('load-progress');
+const loader = document.getElementById('loader');
 const outro = document.getElementById('outro');
 const fatalError = document.getElementById('fatal-error');
 const footerBrand = document.getElementById('footer-brand');
@@ -108,6 +109,10 @@ async function loadPoster(config) {
     if (poster.complete && poster.naturalWidth === 0) {
       throw new Error('Poster image failed to load.');
     }
+    // decode() can also reject for an image that already finished loading
+    // successfully (some formats/engines); waiting for a 'load' event that
+    // already fired would hang forever, so treat this as already loaded.
+    if (poster.complete && poster.naturalWidth > 0) return;
     await new Promise((resolve, reject) => {
       poster.addEventListener('load', resolve, { once: true });
       poster.addEventListener('error', () => {
@@ -327,7 +332,9 @@ function runEngine(config, overlayNodes) {
   store = new FrameStore(config, (fraction) => {
     loadProgress.value = fraction;
   });
-  store.preloadAll();
+  store.preloadAll().then(() => {
+    loader.hidden = true;
+  });
 
   let smoothProgress = 0;
   let lastTargetFrame = -1;

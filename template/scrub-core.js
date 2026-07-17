@@ -285,8 +285,8 @@ export function validateConfig(config) {
     addError('scrub.height', 'scrub.heightVh', 'Scrub height must exceed 100vh.');
   }
   if (!Number.isFinite(config.scrub?.smoothing)
-      || config.scrub.smoothing < 0 || config.scrub.smoothing >= 1) {
-    addError('scrub.smoothing', 'scrub.smoothing', 'Smoothing must be in [0, 1).');
+      || config.scrub.smoothing <= 0 || config.scrub.smoothing >= 1) {
+    addError('scrub.smoothing', 'scrub.smoothing', 'Smoothing must be in (0, 1).');
   }
 
   if (config.overlays !== undefined && !Array.isArray(config.overlays)) {
