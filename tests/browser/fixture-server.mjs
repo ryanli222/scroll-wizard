@@ -47,8 +47,9 @@ function makePng(red, green, blue) {
 }
 
 // A single hold overlay with a CTA covers the focus/inert and reduced-motion
-// assertions; 8 frames keeps the fixture tiny while staying above the
-// engine's decode radius so every frame is always the "desired" window.
+// assertions. frames.count must exceed the engine's decode window
+// (radius 12 -> 25 frames) so the decoded-bitmap bound is falsifiable:
+// with 30 frames, decodedCount > 25 means eviction is broken.
 const config = {
   brand: {
     name: 'Fixture',
@@ -64,7 +65,7 @@ const config = {
     fonts: { display: 'Georgia, serif', body: 'Inter, ui-sans-serif, system-ui, sans-serif' },
   },
   frames: {
-    count: 8,
+    count: 30,
     pattern: 'frames/frame-{index:4}.webp',
     poster: 'frames/frame-0001.webp',
   },
@@ -122,7 +123,9 @@ const server = createServer(async (req, res) => {
   if (frameMatch) {
     const n = Number(frameMatch[1]);
     res.writeHead(200, { 'Content-Type': 'image/png' });
-    res.end(makePng(n * 25, 20, 255 - n * 25));
+    // & 255 keeps channels in range past frame 10; 25 is odd (invertible
+    // mod 256), so every frame index still gets a distinct color.
+    res.end(makePng((n * 25) & 255, 20, (255 - n * 25) & 255));
     return;
   }
 
