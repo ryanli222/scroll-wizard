@@ -30,12 +30,13 @@ directory to this repository — there is no install script.
 Unix:
 
 ```bash
-ln -s /path/to/scroll-wizard ~/.claude/skills/scroll-wizard
+mkdir -p ~/.claude/skills && ln -s /path/to/scroll-wizard ~/.claude/skills/scroll-wizard
 ```
 
 PowerShell (Windows, run as the owning user):
 
 ```powershell
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude\skills" | Out-Null
 New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\scroll-wizard" -Target "C:\path\to\scroll-wizard"
 ```
 
@@ -44,12 +45,13 @@ New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\scroll-wizard
 Unix:
 
 ```bash
-ln -s /path/to/scroll-wizard ~/.agents/skills/scroll-wizard
+mkdir -p ~/.agents/skills && ln -s /path/to/scroll-wizard ~/.agents/skills/scroll-wizard
 ```
 
 PowerShell (Windows):
 
 ```powershell
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.agents\skills" | Out-Null
 New-Item -ItemType Junction -Path "$env:USERPROFILE\.agents\skills\scroll-wizard" -Target "C:\path\to\scroll-wizard"
 ```
 
@@ -58,12 +60,13 @@ New-Item -ItemType Junction -Path "$env:USERPROFILE\.agents\skills\scroll-wizard
 Unix:
 
 ```bash
-ln -s /path/to/scroll-wizard ~/.grok/skills/scroll-wizard
+mkdir -p ~/.grok/skills && ln -s /path/to/scroll-wizard ~/.grok/skills/scroll-wizard
 ```
 
 PowerShell (Windows):
 
 ```powershell
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.grok\skills" | Out-Null
 New-Item -ItemType Junction -Path "$env:USERPROFILE\.grok\skills\scroll-wizard" -Target "C:\path\to\scroll-wizard"
 ```
 
@@ -205,6 +208,16 @@ npm run test:all      # everything above
 halves individually. The integration suite skips automatically when ffmpeg
 or ffprobe are not on `PATH`; the browser suite skips automatically when the
 Playwright Chromium executable is not installed.
+
+### Known limitations
+
+The API-mode money-gate path (paid keyframe/video generation via an MCP
+tool, gated by SKILL.md's "show the prompt, state the cost, wait for
+approval" rule) has no automated end-to-end test coverage — it is enforced
+by SKILL.md instructions and was verified only by static review. Manual
+mode (the user generates media themselves, e.g. in Flow) is the
+behavior-tested path; the suites above exercise manual-mode CLIs and the
+generated site, not a real paid API call.
 
 ## License
 

@@ -4,7 +4,7 @@
 
 Source: https://github.com/darkroomengineering/lenis
 
-Copyright (c) darkroom.engineering
+Copyright (c) 2024 darkroom.engineering
 
 MIT License
 
