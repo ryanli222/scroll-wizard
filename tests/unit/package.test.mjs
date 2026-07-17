@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 const pkg = JSON.parse(
@@ -51,5 +51,16 @@ describe('package contract', () => {
       version: '6.4.3',
       engines: { node: '^18.0.0 || ^20.0.0 || >=22.0.0' },
     });
+  });
+
+  it('includes user docs and license notices', async () => {
+    await expect(access(new URL('../../README.md', import.meta.url))).resolves.toBeUndefined();
+    await expect(access(new URL('../../LICENSE', import.meta.url))).resolves.toBeUndefined();
+    const notices = await readFile(
+      new URL('../../THIRD_PARTY_LICENSES.md', import.meta.url), 'utf8',
+    );
+    expect(notices).toContain('Lenis 1.3.25');
+    expect(notices).toContain('MIT License');
+    expect(notices).toContain('darkroom.engineering');
   });
 });

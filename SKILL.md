@@ -52,10 +52,11 @@ description: Use when a user wants a scroll-scrub video website, scrollytelling 
 For every gate, follow this recipe and nothing shorter:
 
 1. Show the artifact or a concise summary of it. If `status.mjs` reports this gate as
-   `stale` or `needs re-review` (an existing receipt whose manifest hash no longer
-   matches the current file), say so explicitly in that summary — name what changed
-   and why the old approval no longer covers it. Never silently re-gate without
-   surfacing the mismatch.
+   `stale` (an upstream input is now newer than this gate's derived artifact) or
+   `needs re-review` (an existing receipt whose manifest hash no longer matches the
+   current file), say so explicitly in that summary — name what changed and why the
+   old approval no longer covers it. Never silently re-gate without surfacing the
+   mismatch.
 2. Give one recommendation.
 3. Ask for a go-ahead or a specific revision.
 4. End the turn.
