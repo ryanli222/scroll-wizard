@@ -9,7 +9,7 @@ const lock = JSON.parse(
 );
 
 describe('package contract', () => {
-  it('is ESM, Node 20+, and exposes all five CLIs', () => {
+  it('is ESM, Node 20+, and exposes all six CLIs', () => {
     expect(pkg.type).toBe('module');
     expect(pkg.engines.node).toBe('>=20');
     expect(pkg.bin).toEqual({
@@ -18,6 +18,7 @@ describe('package contract', () => {
       'scroll-wizard-scaffold': 'scripts/scaffold-site.mjs',
       'scroll-wizard-status': 'scripts/status.mjs',
       'scroll-wizard-plan-generation': 'scripts/plan-generation.mjs',
+      'scroll-wizard-budget': 'scripts/budget.mjs',
     });
   });
 

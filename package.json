@@ -7,6 +7,7 @@
     "node": ">=20"
   },
   "bin": {
+    "scroll-wizard-budget": "scripts/budget.mjs",
     "scroll-wizard-validate": "scripts/validate-media.mjs",
     "scroll-wizard-extract": "scripts/extract-frames.mjs",
     "scroll-wizard-plan-generation": "scripts/plan-generation.mjs",
