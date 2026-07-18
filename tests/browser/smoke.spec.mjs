@@ -47,15 +47,41 @@ async function stopChild(child) {
 }
 
 test('poster appears before delayed sequence and canvas scrubs', async ({ page }) => {
+  let observeFirstEngineFetch;
+  const firstEngineFetchObserved = new Promise((resolve) => {
+    observeFirstEngineFetch = resolve;
+  });
+  let releaseFirstEngineFetch;
+  const firstEngineFetchReleased = new Promise((resolve) => {
+    releaseFirstEngineFetch = resolve;
+  });
+  let heldFirstEngineFetch = false;
+
   await page.route('**/frames/frame-*.webp', async (route) => {
-    if (!route.request().url().endsWith('frame-0001.webp')) {
+    const request = route.request();
+    const isFirstFrame = request.url().endsWith('frame-0001.webp');
+    if (request.resourceType() === 'image') {
+      await route.continue();
+      return;
+    }
+    if (isFirstFrame && !heldFirstEngineFetch) {
+      heldFirstEngineFetch = true;
+      observeFirstEngineFetch();
+      await firstEngineFetchReleased;
+    } else if (!isFirstFrame) {
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
     await route.continue();
   });
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('#poster')).toBeVisible();
-  await expect(page.locator('#poster')).not.toHaveClass(/is-hidden/);
+
+  try {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await firstEngineFetchObserved;
+    await expect(page.locator('#poster')).toBeVisible();
+    await expect(page.locator('#poster')).not.toHaveClass(/is-hidden/);
+  } finally {
+    releaseFirstEngineFetch();
+  }
 
   await expect.poll(() => page.evaluate(() =>
     window.__SCROLL_WIZARD_DEBUG__?.decodedCount ?? 0)).toBeGreaterThan(0);
