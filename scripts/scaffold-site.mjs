@@ -3,11 +3,13 @@
 import { randomUUID } from 'node:crypto';
 import {
   cp,
+  lstat,
+  mkdir,
   readdir,
   readFile,
   rename,
   rm,
-  stat,
+  rmdir,
   writeFile,
 } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -20,6 +22,7 @@ import { validateConfig } from '../template/scrub-core.js';
 const DEFAULT_TEMPLATE_DIR = fileURLToPath(new URL('../template', import.meta.url));
 
 const FRAME_NAME = /^frame-(\d{4})\.(webp|jpg)$/;
+const MEDIA_ARTIFACTS = ['video.mp4', 'poster.webp', 'media.json'];
 
 export async function inspectFrameSet(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -137,22 +140,47 @@ async function readJsonFile(path, label) {
 
 async function inspectMediaSet(directory, strict = true) {
   try {
+    for (const name of MEDIA_ARTIFACTS) {
+      const item = await lstat(join(directory, name));
+      if (item.isSymbolicLink() || !item.isFile() || item.size <= 0) {
+        throw new Error(
+          'media/' + name + ' must be a nonzero regular file and not a symlink.',
+        );
+      }
+    }
     const mediaInfo = await readJsonFile(
       join(directory, 'media.json'), 'media/media.json',
     );
     if (!Number.isFinite(mediaInfo.duration) || mediaInfo.duration <= 0) {
       throw new Error('media/media.json must contain a positive duration.');
     }
-    for (const name of ['video.mp4', 'poster.webp']) {
-      const item = await stat(join(directory, name));
-      if (!item.isFile() || item.size <= 0) {
-        throw new Error('media/' + name + ' must be a nonzero file.');
-      }
-    }
     return mediaInfo;
   } catch (error) {
     if (strict) throw error;
     return null;
+  }
+}
+
+async function stageMediaSet(source, destination) {
+  await mkdir(destination);
+  for (const name of MEDIA_ARTIFACTS) {
+    await cp(join(source, name), join(destination, name), {
+      dereference: false,
+      errorOnExist: true,
+      force: false,
+    });
+  }
+  return inspectMediaSet(destination);
+}
+
+async function removeConsumedMedia(directory) {
+  for (const name of MEDIA_ARTIFACTS) {
+    await rm(join(directory, name), { force: true });
+  }
+  try {
+    await rmdir(directory);
+  } catch (error) {
+    if (!['ENOENT', 'ENOTEMPTY'].includes(error?.code)) throw error;
   }
 }
 
@@ -228,7 +256,12 @@ async function recoverInterruptedRun(projectDir, io) {
 }
 
 export async function scaffoldProject(options) {
-  const { valuesPath, force = false, io = console } = options;
+  const {
+    valuesPath,
+    force = false,
+    io = console,
+    fileOperations = {},
+  } = options;
   const projectDir = resolve(options.projectDir);
   const templateDir = resolve(options.templateDir ?? DEFAULT_TEMPLATE_DIR);
   const sitePath = join(projectDir, 'site');
@@ -247,9 +280,10 @@ export async function scaffoldProject(options) {
   const siteOldPath = join(projectDir, 'site.old-' + suffix);
   const readmeTmpPath = join(projectDir, '.README.md.tmp-' + suffix);
   const readmePath = join(projectDir, 'README.md');
+  const renameAsset = fileOperations.rename ?? rename;
 
   let freshFramesMoved = false;
-  let freshMediaMoved = false;
+  let freshMediaConsumed = false;
   let siteReplaced = false;
   try {
     const [values, defaults] = await Promise.all([
@@ -289,18 +323,13 @@ export async function scaffoldProject(options) {
           + 'or scaffold over an existing site that already has media.',
         );
       }
-      if (mediaSourcePath === projectMediaPath) {
-        await rename(projectMediaPath, join(siteTmpPath, 'media'));
-        freshMediaMoved = true;
-        framesSource = 'fresh';
-      } else {
-        await cp(liveMediaPath, join(siteTmpPath, 'media'), { recursive: true });
-        framesSource = 'inherited';
-      }
-      mediaSet = await inspectMediaSet(join(siteTmpPath, 'media'));
+      await inspectMediaSet(mediaSourcePath);
+      mediaSet = await stageMediaSet(mediaSourcePath, join(siteTmpPath, 'media'));
+      freshMediaConsumed = mediaSourcePath === projectMediaPath;
+      framesSource = freshMediaConsumed ? 'fresh' : 'inherited';
     } else {
       if (await pathExists(projectFramesPath)) {
-        await rename(projectFramesPath, join(siteTmpPath, 'frames'));
+        await renameAsset(projectFramesPath, join(siteTmpPath, 'frames'));
         freshFramesMoved = true;
         framesSource = 'fresh';
       } else {
@@ -352,6 +381,7 @@ export async function scaffoldProject(options) {
     try {
       await rename(readmeTmpPath, readmePath);
       if (siteExisted) await rm(siteOldPath, { recursive: true, force: true });
+      if (freshMediaConsumed) await removeConsumedMedia(projectMediaPath);
     } catch (postCommitError) {
       // The site itself is already fully validated and swapped in; a failure
       // here only affects the README convenience file or old-site cleanup.
@@ -367,15 +397,25 @@ export async function scaffoldProject(options) {
       sitePath, frameSet, mediaSet, framesSource, config, warnings, readmePath,
     };
   } catch (error) {
+    let reportedError = error;
+    let retainStaging = false;
     if (freshFramesMoved && !siteReplaced) {
-      await rename(join(siteTmpPath, 'frames'), projectFramesPath).catch(() => {});
+      try {
+        await renameAsset(join(siteTmpPath, 'frames'), projectFramesPath);
+      } catch (rollbackError) {
+        retainStaging = true;
+        reportedError = new AggregateError(
+          [error, rollbackError],
+          'Scaffold failed and fresh frames could not be restored; '
+            + 'staging was retained for interrupted-run recovery.',
+        );
+      }
     }
-    if (freshMediaMoved && !siteReplaced) {
-      await rename(join(siteTmpPath, 'media'), projectMediaPath).catch(() => {});
+    if (!retainStaging) {
+      await rm(siteTmpPath, { recursive: true, force: true }).catch(() => {});
     }
-    await rm(siteTmpPath, { recursive: true, force: true }).catch(() => {});
     await rm(readmeTmpPath, { recursive: true, force: true }).catch(() => {});
-    throw error;
+    throw reportedError;
   }
 }
 

@@ -3,7 +3,9 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename as renamePath,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -283,6 +285,50 @@ describe('scaffoldProject', () => {
     expect(await readdir(projectDir)).not.toContain('media');
   });
 
+  it('publishes only the three validated media artifacts and preserves unrelated files', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedFreshMedia(projectDir);
+    await writeFile(join(projectDir, 'media', 'notes.txt'), 'do not publish', 'utf8');
+    await writeValues(projectDir, { ...creativeValues, scrub: { mode: 'video' } });
+
+    await scaffoldProject({
+      projectDir,
+      valuesPath: join(projectDir, 'values.json'),
+      templateDir,
+    });
+
+    expect(await readdir(join(projectDir, 'site', 'media')))
+      .toEqual(['media.json', 'poster.webp', 'video.mp4']);
+    expect(await readdir(join(projectDir, 'media'))).toEqual(['notes.txt']);
+    await expect(readFile(join(projectDir, 'media', 'notes.txt'), 'utf8'))
+      .resolves.toBe('do not publish');
+  });
+
+  it('rejects symlinked media artifacts without consuming fresh originals', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedFreshMedia(projectDir);
+    const externalVideo = join(projectDir, 'external-video');
+    await mkdir(externalVideo);
+    await writeFile(join(externalVideo, 'marker.txt'), 'external video');
+    await rm(join(projectDir, 'media', 'video.mp4'));
+    await symlink(externalVideo, join(projectDir, 'media', 'video.mp4'), 'junction');
+    await writeValues(projectDir, { ...creativeValues, scrub: { mode: 'video' } });
+
+    await expect(scaffoldProject({
+      projectDir,
+      valuesPath: join(projectDir, 'values.json'),
+      templateDir,
+    })).rejects.toThrow(/regular.*not.*symlink/i);
+
+    expect(await readdir(join(projectDir, 'media')))
+      .toEqual(['media.json', 'poster.webp', 'video.mp4']);
+    await expect(readFile(join(externalVideo, 'marker.txt'), 'utf8'))
+      .resolves.toBe('external video');
+    expect((await readdir(projectDir)).some((name) => name.startsWith('site.tmp-'))).toBe(false);
+  });
+
   it('implicitly selects video only when the available media set is valid', async () => {
     const projectDir = await makeProjectDir();
     const templateDir = await makeTemplateDir();
@@ -443,6 +489,51 @@ describe('scaffoldProject', () => {
     expect(await readFile(join(projectDir, 'site', 'marker.txt'), 'utf8'))
       .toBe('old-site');
     expect(await readdir(join(projectDir, 'frames'))).toEqual(['frame-0001.webp']);
+    expect((await readdir(projectDir)).some((name) => name.startsWith('site.tmp-'))).toBe(false);
+  });
+
+  it('surfaces rollback failure and retains staged frames for startup recovery', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedFreshFrames(projectDir, ['frame-0001.webp']);
+    await writeInvalidValues(projectDir);
+    const rollbackError = new Error('restore denied');
+    const injectedRename = async (source, target) => {
+      if (source.includes('site.tmp-') && target === join(projectDir, 'frames')) {
+        throw rollbackError;
+      }
+      return renamePath(source, target);
+    };
+
+    let failure;
+    try {
+      await scaffoldProject({
+        projectDir,
+        valuesPath: join(projectDir, 'values.json'),
+        templateDir,
+        fileOperations: { rename: injectedRename },
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(failure.errors).toEqual(expect.arrayContaining([rollbackError]));
+    expect(String(failure.errors[0]?.message)).toMatch(/surface|contrast/);
+    const retainedTmp = (await readdir(projectDir))
+      .find((name) => name.startsWith('site.tmp-'));
+    expect(retainedTmp).toBeDefined();
+    expect(await readdir(join(projectDir, retainedTmp, 'frames')))
+      .toEqual(['frame-0001.webp']);
+    expect(await readdir(projectDir)).not.toContain('frames');
+
+    await writeValidValues(projectDir);
+    const recovered = await scaffoldProject({
+      projectDir,
+      valuesPath: join(projectDir, 'values.json'),
+      templateDir,
+    });
+    expect(recovered.framesSource).toBe('fresh');
     expect((await readdir(projectDir)).some((name) => name.startsWith('site.tmp-'))).toBe(false);
   });
 
