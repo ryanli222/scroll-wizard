@@ -78,7 +78,23 @@ async function seedFreshFrames(projectDir, names) {
   await Promise.all(names.map((name) => writeFile(join(framesDir, name), 'frame')));
 }
 
-async function seedLiveSite(projectDir, { marker, frames } = {}) {
+async function seedMedia(directory, media = {}) {
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, 'video.mp4'), media.video ?? 'video');
+  await writeFile(join(directory, 'poster.webp'), media.poster ?? 'poster');
+  await writeFile(join(directory, 'media.json'), JSON.stringify({
+    duration: 7.8,
+    width: 1600,
+    height: 900,
+    ...media.metadata,
+  }), 'utf8');
+}
+
+async function seedFreshMedia(projectDir, media) {
+  await seedMedia(join(projectDir, 'media'), media);
+}
+
+async function seedLiveSite(projectDir, { marker, frames, media } = {}) {
   const sitePath = join(projectDir, 'site');
   await mkdir(sitePath, { recursive: true });
   if (marker !== undefined) {
@@ -88,6 +104,9 @@ async function seedLiveSite(projectDir, { marker, frames } = {}) {
     const framesDir = join(sitePath, 'frames');
     await mkdir(framesDir, { recursive: true });
     await Promise.all(frames.map((name) => writeFile(join(framesDir, name), 'frame')));
+  }
+  if (media) {
+    await seedMedia(join(sitePath, 'media'), media);
   }
 }
 
@@ -179,7 +198,183 @@ describe('assembleConfig', () => {
   });
 });
 
+describe('assembleConfig video mode', () => {
+  const defaults = () => JSON.parse(JSON.stringify({
+    brand: { name: 'Aster', tagline: 'T', imageAlt: 'A' },
+    theme: {
+      bg: '#050607', text: '#f7f8f2', accent: '#dfff57',
+      surface: 'rgba(5,6,7,0.78)', radius: 12,
+      fonts: { display: 'Georgia, serif', body: 'Inter, sans-serif' },
+    },
+    frames: {
+      count: 24,
+      pattern: 'frames/frame-{index:4}.webp',
+      poster: 'frames/frame-0001.webp',
+    },
+    scrub: { heightVh: 400, smoothing: 0.12 },
+  }));
+
+  it('emits a video block and drops frames', () => {
+    const { config } = assembleConfig(
+      defaults(),
+      { scrub: { mode: 'video' } },
+      null,
+      { duration: 7.8 },
+    );
+    expect(config.video).toEqual({
+      src: 'media/video.mp4', poster: 'media/poster.webp', duration: 7.8,
+    });
+    expect(config.frames).toBeUndefined();
+    expect(config.scrub.mode).toBe('video');
+  });
+
+  it('still builds frames config when mediaSet is absent', () => {
+    const { config } = assembleConfig(
+      defaults(),
+      {},
+      { count: 24, extension: 'webp', pattern: 'frames/frame-{index:4}.webp' },
+      null,
+    );
+    expect(config.frames.count).toBe(24);
+    expect(config.video).toBeUndefined();
+  });
+
+  it('lets explicit frames mode win even when a media set is supplied', () => {
+    const { config } = assembleConfig(
+      defaults(),
+      { scrub: { mode: 'frames' } },
+      { count: 24, extension: 'webp', pattern: 'frames/frame-{index:4}.webp' },
+      { duration: 7.8 },
+    );
+    expect(config.scrub.mode).toBe('frames');
+    expect(config.frames.count).toBe(24);
+    expect(config.video).toBeUndefined();
+  });
+
+  it('implicitly builds video config from a supplied valid media set', () => {
+    const { config } = assembleConfig(defaults(), {}, null, { duration: 7.8 });
+    expect(config.video.duration).toBe(7.8);
+    expect(config.frames).toBeUndefined();
+  });
+});
+
 describe('scaffoldProject', () => {
+  it('assembles a video-mode site from fresh project media', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedFreshMedia(projectDir);
+    await writeValues(projectDir, { ...creativeValues, scrub: { mode: 'video' } });
+
+    const result = await scaffoldProject({
+      projectDir,
+      valuesPath: join(projectDir, 'values.json'),
+      templateDir,
+    });
+
+    expect(result.framesSource).toBe('fresh');
+    await expect(readFile(join(projectDir, 'site', 'media', 'video.mp4'), 'utf8'))
+      .resolves.toBe('video');
+    const config = JSON.parse(await readFile(join(projectDir, 'site', 'config.json'), 'utf8'));
+    expect(config.scrub.mode).toBe('video');
+    expect(config.frames).toBeUndefined();
+    expect(config.video).toEqual({
+      src: 'media/video.mp4', poster: 'media/poster.webp', duration: 7.8,
+    });
+    expect(await readdir(projectDir)).not.toContain('media');
+  });
+
+  it('implicitly selects video only when the available media set is valid', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedFreshFrames(projectDir, ['frame-0001.webp']);
+    await seedFreshMedia(projectDir);
+    await writeValidValues(projectDir);
+
+    const result = await scaffoldProject({
+      projectDir,
+      valuesPath: join(projectDir, 'values.json'),
+      templateDir,
+    });
+
+    expect(result.config.scrub.mode).toBeUndefined();
+    expect(result.config.video.duration).toBe(7.8);
+    expect(result.config.frames).toBeUndefined();
+    expect(await readdir(projectDir)).toContain('frames');
+  });
+
+  it('keeps frames mode when implicit project media metadata is invalid', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedFreshFrames(projectDir, ['frame-0001.webp']);
+    await seedFreshMedia(projectDir, { metadata: { duration: 0 } });
+    await writeValidValues(projectDir);
+
+    const result = await scaffoldProject({
+      projectDir,
+      valuesPath: join(projectDir, 'values.json'),
+      templateDir,
+    });
+
+    expect(result.config.video).toBeUndefined();
+    expect(result.config.frames.count).toBe(1);
+    expect(await readdir(projectDir)).toContain('media');
+  });
+
+  it('restores fresh media when staged media validation fails', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedFreshMedia(projectDir, { metadata: { duration: 0 } });
+    await writeValues(projectDir, { ...creativeValues, scrub: { mode: 'video' } });
+
+    await expect(scaffoldProject({
+      projectDir,
+      valuesPath: join(projectDir, 'values.json'),
+      templateDir,
+    })).rejects.toThrow(/positive duration/);
+
+    expect(await readdir(join(projectDir, 'media')))
+      .toEqual(['media.json', 'poster.webp', 'video.mp4']);
+    expect((await readdir(projectDir)).some((name) => name.startsWith('site.tmp-'))).toBe(false);
+  });
+
+  it('copies inherited media for a video-mode rebuild', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedLiveSite(projectDir, { media: {} });
+    await writeValues(projectDir, { ...creativeValues, scrub: { mode: 'video' } });
+
+    const result = await scaffoldProject({
+      projectDir,
+      valuesPath: join(projectDir, 'values.json'),
+      templateDir,
+      force: true,
+    });
+
+    expect(result.framesSource).toBe('inherited');
+    expect(await readdir(join(projectDir, 'site', 'media')))
+      .toEqual(['media.json', 'poster.webp', 'video.mp4']);
+  });
+
+  it('rescues fresh media orphaned in a stale site.tmp before deleting it', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedMedia(join(projectDir, 'site.tmp-orphan', 'media'));
+    await writeValues(projectDir, { ...creativeValues, scrub: { mode: 'video' } });
+    const io = fakeIo();
+
+    const result = await scaffoldProject({
+      projectDir,
+      valuesPath: join(projectDir, 'values.json'),
+      templateDir,
+      io,
+    });
+
+    expect(result.framesSource).toBe('fresh');
+    expect(result.config.video.duration).toBe(7.8);
+    expect(io.warn).toHaveBeenCalledWith(expect.stringContaining('fresh media'));
+    expect((await readdir(projectDir)).some((name) => name.startsWith('site.tmp-'))).toBe(false);
+  });
+
   it('assembles a fresh site from fresh frames', async () => {
     const projectDir = await makeProjectDir();
     const templateDir = await makeTemplateDir();
@@ -390,6 +585,23 @@ describe('scaffoldProject', () => {
 });
 
 describe('scaffold-site CLI', () => {
+  it('prints video and omits frame-only output for video mode', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedFreshMedia(projectDir);
+    await writeValues(projectDir, { ...creativeValues, scrub: { mode: 'video' } });
+    const io = fakeIo();
+
+    expect(await main([
+      projectDir, '--config', join(projectDir, 'values.json'),
+    ], io, templateDir)).toBe(0);
+
+    const lines = io.log.mock.calls.map((call) => call[0]);
+    expect(lines).toContain('Video: media/video.mp4');
+    expect(lines.some((line) => line.startsWith('Frames:'))).toBe(false);
+    expect(lines.some((line) => line.startsWith('Poster:'))).toBe(false);
+  });
+
   it('prints site, frames, poster, README, and warnings on success', async () => {
     const projectDir = await makeProjectDir();
     const templateDir = await makeTemplateDir({
