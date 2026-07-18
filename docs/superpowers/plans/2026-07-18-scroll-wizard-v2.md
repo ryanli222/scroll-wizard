@@ -32,7 +32,7 @@
 **Interfaces:**
 - Produces: `lingerEase(x, linger) => number`; `progressToTime(progress, duration, margin = 0.05) => seconds`; `selectScrubMode(config) => 'video'|'frames'` (explicit mode wins, otherwise video when a `video` block exists); `validateConfig(config)` accepts `scrub.linger` and requires safe `media/` assets in video mode without requiring frames.
 
-- [ ] **Step 1: Write failing tests** (append to `tests/unit/scrub-core.test.mjs`, importing `lingerEase`, `progressToTime`, and `selectScrubMode` from `../../template/scrub-core.js`):
+- [x] **Step 1: Write failing tests** (append to `tests/unit/scrub-core.test.mjs`, importing `lingerEase`, `progressToTime`, and `selectScrubMode` from `../../template/scrub-core.js`):
 
 ```js
 describe('lingerEase', () => {
@@ -116,9 +116,9 @@ describe('validateConfig v2', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure** — `npx vitest run tests/unit/scrub-core.test.mjs` — expect FAIL (`lingerEase is not defined` etc.).
+- [x] **Step 2: Run to verify failure** — `npx vitest run tests/unit/scrub-core.test.mjs` — expect FAIL (`lingerEase is not defined` etc.).
 
-- [ ] **Step 3: Implement in `template/scrub-core.js`.**
+- [x] **Step 3: Implement in `template/scrub-core.js`.**
 
 Add near the other math helpers:
 
@@ -218,9 +218,9 @@ Move the frame checks below the mode declaration and wrap them exactly as follow
   }
 ```
 
-- [ ] **Step 4: Run tests** — `npx vitest run tests/unit/scrub-core.test.mjs` — expect PASS, including all pre-existing tests.
+- [x] **Step 4: Run tests** — `npx vitest run tests/unit/scrub-core.test.mjs` — expect PASS, including all pre-existing tests.
 
-- [ ] **Step 5: Commit** — `git add template/scrub-core.js tests/unit/scrub-core.test.mjs && git commit -m "feat: linger easing, video time mapping, v2 config validation"`
+- [x] **Step 5: Commit** — `git add template/scrub-core.js tests/unit/scrub-core.test.mjs && git commit -m "feat: linger easing, video time mapping, v2 config validation"`
 
 ---
 
@@ -234,19 +234,19 @@ Move the frame checks below the mode declaration and wrap them exactly as follow
 - Consumes: `lingerEase` from Task 1.
 - Produces: loader hides on first drawn frame, not after full preload; frames tick applies `lingerEase(applyHolds(raw, holds), config.scrub.linger ?? 0)`.
 
-- [ ] **Step 1: Read `tests/browser/smoke.spec.mjs` and `tests/browser/fixture-server.mjs`.** Run `npx playwright test` first to confirm the suite is green. Then make the frames fixture delay every frame after the initial decode window and add a test that waits for `#loader` to hide, captures debug state immediately, and asserts both `lastFrame >= 0` and `decodedCount < frameCount`. This test must fail against the old `preloadAll().then(() => loader.hidden = true)` behavior.
+- [x] **Step 1: Read `tests/browser/smoke.spec.mjs` and `tests/browser/fixture-server.mjs`.** Run `npx playwright test` first to confirm the suite is green. Then make the frames fixture delay every frame after the initial decode window and add a test that waits for `#loader` to hide, captures debug state immediately, and asserts both `lastFrame >= 0` and `decodedCount < frameCount`. This test must fail against the old `preloadAll().then(() => loader.hidden = true)` behavior.
 
-- [ ] **Step 2: Run to verify failure** — `npx playwright test tests/browser/smoke.spec.mjs --grep "loader"` — expect the loader assertion to time out while delayed background frames are outstanding.
+- [x] **Step 2: Run to verify failure** — `npx playwright test tests/browser/smoke.spec.mjs --grep "loader"` — expect the loader assertion to time out while delayed background frames are outstanding.
 
-- [ ] **Step 3: Implement in `template/scrub-engine.js`:**
+- [x] **Step 3: Implement in `template/scrub-engine.js`:**
   - Import `lingerEase` in the existing import block from `./scrub-core.js`.
   - In `runEngine`, replace `store.preloadAll().then(() => { loader.hidden = true; });` with `store.preloadAll();` (progress bar keeps updating via `onProgress`).
   - In `tick`, where `posterHidden` flips to true, also `loader.hidden = true;`.
   - Change `const targetProgress = applyHolds(raw, holds);` to `const targetProgress = lingerEase(applyHolds(raw, holds), config.scrub.linger ?? 0);`.
 
-- [ ] **Step 4: Run** `npx playwright test` — expect PASS.
+- [x] **Step 4: Run** `npx playwright test` — expect PASS.
 
-- [ ] **Step 5: Commit** — `git add template/scrub-engine.js tests/browser/ && git commit -m "fix: hide loader on first painted frame; apply linger easing"`
+- [x] **Step 5: Commit** — `git add template/scrub-engine.js tests/browser/ && git commit -m "fix: hide loader on first painted frame; apply linger easing"`
 
 ---
 
@@ -260,17 +260,17 @@ Move the frame checks below the mode declaration and wrap them exactly as follow
 - Consumes: `progressToTime`, `lingerEase`, v2 `validateConfig` (Task 1).
 - Produces: with `config.scrub.mode === 'video'` and `config.video = {src, poster, duration}`, the site blob-loads the video, scrubs `currentTime` with seek coalescing, keeps the poster until first `seeked`, primes playback on first gesture. Frames mode untouched.
 
-- [ ] **Step 1: Write the failing browser scenarios first.** Use the VP9 fixture and exact video/mobile assertions specified later in this task. Do not change `template/` yet.
+- [x] **Step 1: Write the failing browser scenarios first.** Use the VP9 fixture and exact video/mobile assertions specified later in this task. Do not change `template/` yet.
 
-- [ ] **Step 2: Run to verify failure** — `npx playwright test tests/browser/smoke.spec.mjs --grep "video mode|phone viewport"` — expect failure because `#scrub-video`, video-time debug state, and responsive behavior do not exist.
+- [x] **Step 2: Run to verify failure** — `npx playwright test tests/browser/smoke.spec.mjs --grep "video mode|phone viewport"` — expect failure because `#scrub-video`, video-time debug state, and responsive behavior do not exist.
 
-- [ ] **Step 3: Add the video element to `template/index.html`** directly after the poster `<img>`:
+- [x] **Step 3: Add the video element to `template/index.html`** directly after the poster `<img>`:
 
 ```html
         <video id="scrub-video" class="scrub__video" muted playsinline aria-hidden="true"></video>
 ```
 
-- [ ] **Step 4: Add to `template/style.css`** (mirror the `.scrub__canvas` positioning block — read it first and copy its position/inset/size rules):
+- [x] **Step 4: Add to `template/style.css`** (mirror the `.scrub__canvas` positioning block — read it first and copy its position/inset/size rules):
 
 ```css
 .scrub__video {
@@ -287,7 +287,7 @@ Move the frame checks below the mode declaration and wrap them exactly as follow
 }
 ```
 
-- [ ] **Step 5: Implement video mode in `template/scrub-engine.js`.**
+- [x] **Step 5: Implement video mode in `template/scrub-engine.js`.**
 
 Add `progressToTime` to the scrub-core import. Extract the overlay/progress-bar updates from `runEngine`'s `tick` into shared helpers (and call them from `runEngine`):
 
@@ -424,9 +424,9 @@ test('video mode scrubs the video with scroll', async ({ page }) => {
 
 Add a phone-viewport scenario (`390x844`, `hasTouch: true`) using the same media assets. Assert that the page has no horizontal overflow, the visible CTA has a hit area of at least 44x44 CSS pixels, overlay text remains inside the viewport, and scrolling advances video time. Add a resize assertion showing a height-only viewport change does not reset progress. Update responsive CSS with `env(safe-area-inset-*)`, mobile overlay width/position rules, and reduced decorative effects as needed to make the test pass; do not add portrait-specific media paths.
 
-- [ ] **Step 6: Run** `npx playwright test` — expect PASS for frames, video, reduced-motion, and phone-viewport scenarios.
+- [x] **Step 6: Run** `npx playwright test` — expect PASS for frames, video, reduced-motion, and phone-viewport scenarios.
 
-- [ ] **Step 7: Commit** — `git add template/ tests/browser/ && git commit -m "feat: add responsive video seek-scrub playback"`
+- [x] **Step 7: Commit** — `git add template/ tests/browser/ && git commit -m "feat: add responsive video seek-scrub playback"`
 
 ---
 
@@ -440,7 +440,7 @@ Add a phone-viewport scenario (`390x844`, `hasTouch: true`) using the same media
 - Consumes: `runFfprobe`, `videoVerdict`; payload constants from `extract-frames.mjs`; CLI helpers; and `pathExists`, `replaceDirectory`, `writeJsonAtomic` from `scripts/lib/files.mjs`.
 - Produces: CLI `reencode-video <input> <outDir> [--crf 10..40=23] [--width 16..8192=1600] [--gop 1..120=8|--all-intra] [--poster-at seconds=0] [--force]`; writes H.264 faststart media, poster, and `media.json` with `{ duration, width, height, crf, gop }`; prints payload size and mid-4G estimate. Exports `parseReencodeArgs`, ffmpeg argument builders, and `main`.
 
-- [ ] **Step 1: Write failing tests** in `tests/unit/reencode-video.test.mjs` (mirror the style of `tests/unit/extract-frames.test.mjs` — fake `runner`, fake `io` collecting lines; read that file first and reuse its helpers/pattern):
+- [x] **Step 1: Write failing tests** in `tests/unit/reencode-video.test.mjs` (mirror the style of `tests/unit/extract-frames.test.mjs` — fake `runner`, fake `io` collecting lines; read that file first and reuse its helpers/pattern):
 
 ```js
 import { describe, expect, it } from 'vitest';
@@ -495,9 +495,9 @@ describe('buildPosterArgs', () => {
 
 Also test `main` with fake `io`/`runner`: missing input returns 1; ffprobe/ffmpeg failure returns 2; success emits the JSON report; and a failed forced run preserves a pre-existing output directory byte-for-byte.
 
-- [ ] **Step 2: Run to verify failure** — `npx vitest run tests/unit/reencode-video.test.mjs` — expect FAIL (module not found).
+- [x] **Step 2: Run to verify failure** — `npx vitest run tests/unit/reencode-video.test.mjs` — expect FAIL (module not found).
 
-- [ ] **Step 3: Implement `scripts/reencode-video.mjs`:**
+- [x] **Step 3: Implement `scripts/reencode-video.mjs`:**
 
 ```js
 #!/usr/bin/env node
@@ -662,11 +662,11 @@ Note: check `videoVerdict`'s metadata shape in `scripts/validate-media.mjs` befo
 
 Do not write directly into the live output directory. Create a sibling `.media.tmp-<uuid>` directory, write and validate all three files there, then call `replaceDirectory(prepared, outDir, options.force)`. Always remove the prepared path in `finally`. This is the same transaction pattern used by `extract-frames.mjs`; read its complete replacement/rollback block before implementing.
 
-- [ ] **Step 4: Run tests** — `npx vitest run tests/unit/reencode-video.test.mjs` — expect PASS.
+- [x] **Step 4: Run tests** — `npx vitest run tests/unit/reencode-video.test.mjs` — expect PASS.
 
-- [ ] **Step 5: End-to-end sanity** (real ffmpeg): `node scripts/reencode-video.mjs "C:\Users\ryanl\desktop\scrolltest\scrollcar\input\video.mp4" "C:\Users\ryanl\AppData\Local\Temp\claude\reencode-check" --width 640` — expect a JSON summary and three files in the output dir. Delete the temp dir afterwards.
+- [x] **Step 5: End-to-end sanity** (real ffmpeg): `node scripts/reencode-video.mjs "C:\Users\ryanl\desktop\scrolltest\scrollcar\input\video.mp4" "C:\Users\ryanl\AppData\Local\Temp\claude\reencode-check" --width 640` — expect a JSON summary and three files in the output dir. Delete the temp dir afterwards.
 
-- [ ] **Step 6: Commit** — `git add scripts/reencode-video.mjs tests/unit/reencode-video.test.mjs && git commit -m "feat: add balanced scrub-video encoding presets"`
+- [x] **Step 6: Commit** — `git add scripts/reencode-video.mjs tests/unit/reencode-video.test.mjs && git commit -m "feat: add balanced scrub-video encoding presets"`
 
 ---
 
@@ -680,7 +680,7 @@ Do not write directly into the live output directory. Create a sibling `.media.t
 - Consumes: v2 `validateConfig` (Task 1); `media/` layout from Task 4 (`video.mp4`, `poster.webp`, `media.json`).
 - Produces: explicit `values.scrub.mode` wins; otherwise a valid project/inherited `media/media.json` selects video and frames select frames. `assembleConfig(defaults, values, frameSet, mediaSet)` emits the matching config and preserves transactional rollback for either asset directory.
 
-- [ ] **Step 1: Write failing tests** (append to `tests/unit/scaffold-site.test.mjs`; read the file first and reuse its temp-project helpers):
+- [x] **Step 1: Write failing tests** (append to `tests/unit/scaffold-site.test.mjs`; read the file first and reuse its temp-project helpers):
 
 ```js
 describe('assembleConfig video mode', () => {
@@ -721,9 +721,9 @@ describe('assembleConfig video mode', () => {
 
 Also add a `scaffoldProject` integration case: build a temp project with `values.json` containing `"scrub": { "mode": "video" }`, a `media/` dir holding a dummy `video.mp4`, `poster.webp` (any nonzero bytes), and `media.json` `{"duration": 7.8, "width": 1600, "height": 900}`, no `frames/` dir; assert the scaffold succeeds, `site/media/video.mp4` exists, and `site/config.json` has `scrub.mode === 'video'` and no `frames` key.
 
-- [ ] **Step 2: Run to verify failure** — `npx vitest run tests/unit/scaffold-site.test.mjs` — expect FAIL.
+- [x] **Step 2: Run to verify failure** — `npx vitest run tests/unit/scaffold-site.test.mjs` — expect FAIL.
 
-- [ ] **Step 3: Implement in `scripts/scaffold-site.mjs`:**
+- [x] **Step 3: Implement in `scripts/scaffold-site.mjs`:**
 
 `assembleConfig` gains a fourth parameter and branches:
 
@@ -828,9 +828,9 @@ In `scaffoldProject`, read `values.json` **before** the frames handling (move th
 
 Mirror the frames rollback in the `catch`: if the fresh `media` dir was moved and the site was not replaced, move it back (same pattern as `freshFramesMoved`; add a `freshMediaMoved` flag). Update `recoverInterruptedRun`'s tmp-dir recovery to also restore an orphaned `media` dir (same code path as `frames` — add a second recovery block or loop over `['frames', 'media']`). Update `buildReadme` to print `- Video: media/video.mp4 (…)` instead of the frames line when `mediaSet` is set, and the `main` summary output likewise (`Video: media/video.mp4` / skip the poster-frames line).
 
-- [ ] **Step 4: Run tests** — `npx vitest run tests/unit/scaffold-site.test.mjs` — expect PASS (old cases too).
+- [x] **Step 4: Run tests** — `npx vitest run tests/unit/scaffold-site.test.mjs` — expect PASS (old cases too).
 
-- [ ] **Step 5: Commit** — `git add scripts/scaffold-site.mjs tests/unit/scaffold-site.test.mjs && git commit -m "feat: scaffold video-mode sites from project media"`
+- [x] **Step 5: Commit** — `git add scripts/scaffold-site.mjs tests/unit/scaffold-site.test.mjs && git commit -m "feat: scaffold video-mode sites from project media"`
 
 ---
 
@@ -844,7 +844,7 @@ Mirror the frames rollback in the `catch`: if the fresh `media` dir was moved an
 - Consumes: `values.scrub.mode` convention (Task 5).
 - Produces: the seven v2 gates; storyboard receipts include approved overlay fields; stills-preview hashes stable frames + storyboard projection rather than the mutable site; extraction hashes frames or encoded media and is never skipped; `video` skips only when `values.generation.video === false`; stills-preview skips only for legacy projects that have video but no beat prompts; legacy `keyframes` receipts count as storyboard; all-done resume step is 8.
 
-- [ ] **Step 1: Write failing tests** (append to `tests/unit/status.test.mjs`; read it first — it builds temp projects and fake `inspect` functions; reuse those helpers):
+- [x] **Step 1: Write failing tests** (append to `tests/unit/status.test.mjs`; read it first — it builds temp projects and fake `inspect` functions; reuse those helpers):
 
 Cases to add:
 1. `GATES` equals the v2 list in order.
@@ -856,9 +856,9 @@ Cases to add:
 7. Rebuilding/theme-changing `site/` does not invalidate stills-preview when beat frames and storyboard projection are unchanged.
 8. `values.generation.video === false` skips video but still requires extraction from beat frames.
 
-- [ ] **Step 2: Run to verify failure** — `npx vitest run tests/unit/status.test.mjs` — expect FAIL.
+- [x] **Step 2: Run to verify failure** — `npx vitest run tests/unit/status.test.mjs` — expect FAIL.
 
-- [ ] **Step 3: Implement in `scripts/status.mjs`:**
+- [x] **Step 3: Implement in `scripts/status.mjs`:**
 
 ```js
 export const GATES = [
@@ -982,11 +982,11 @@ function stepFor(item) {
 
 All-done resume becomes `8`: `return finish(actionableSteps.length ? Math.min(...actionableSteps) : 8, inventory, unapproved);`.
 
-- [ ] **Step 4: Run tests** — `npx vitest run tests/unit/status.test.mjs` — expect PASS. Then run the whole unit suite `npx vitest run` — other suites (e.g. `tests/integration/pipeline.test.mjs`, `tests/skill/*`) may reference gate names or step numbers; update any that assert `keyframes`/6-gate numbering to the v2 names, keeping the legacy-receipt test intact.
+- [x] **Step 4: Run tests** — `npx vitest run tests/unit/status.test.mjs` — expect PASS. Then run the whole unit suite `npx vitest run` — other suites (e.g. `tests/integration/pipeline.test.mjs`, `tests/skill/*`) may reference gate names or step numbers; update any that assert `keyframes`/6-gate numbering to the v2 names, keeping the legacy-receipt test intact.
 
-- [ ] **Step 5: Real-project sanity** — `node scripts/status.mjs "C:\Users\ryanl\desktop\scrolltest\scrollcar" --json` — expect the v1 project to resolve without demanding re-approval of brief/storyboard/video/extraction (its receipts were written under v1 names; `stills-preview` must show as skipped because `input/video.mp4` exists).
+- [x] **Step 5: Real-project sanity** — `node scripts/status.mjs "C:\Users\ryanl\desktop\scrolltest\scrollcar" --json` — expect the v1 project to resolve without demanding re-approval of brief/storyboard/video/extraction (its receipts were written under v1 names; `stills-preview` must show as skipped because `input/video.mp4` exists).
 
-- [ ] **Step 6: Commit** — `git add scripts/status.mjs tests/ && git commit -m "feat: add stable v2 gate receipts with v1 compatibility"`
+- [x] **Step 6: Commit** — `git add scripts/status.mjs tests/ && git commit -m "feat: add stable v2 gate receipts with v1 compatibility"`
 
 ---
 
@@ -1000,7 +1000,7 @@ All-done resume becomes `8`: `return finish(actionableSteps.length ? Math.min(..
 - Consumes: `replaceDirectory`, `pathExists`, `listFilesRecursive` from `scripts/lib/files.mjs`; `summarizeFrames` from `scripts/extract-frames.mjs`; `runFfprobe` from `scripts/validate-media.mjs`.
 - Produces: CLI `stills-to-frames <projectDir> [--width 1600] [--quality 80] [--force]` — reads `input/keyframes/beat-<n>.(png|jpg|jpeg|webp)` (n contiguous from 1, at least 2), converts each to `frames/frame-000N.webp` in beat order via ffmpeg, atomically replaces `<projectDir>/frames`, prints the same JSON summary shape as `extract-frames`. Exports `planBeats(fileNames)`, `main(argv, io, runner)`.
 
-- [ ] **Step 1: Write failing tests:**
+- [x] **Step 1: Write failing tests:**
 
 ```js
 import { describe, expect, it } from 'vitest';
@@ -1025,9 +1025,9 @@ describe('planBeats', () => {
 
 Add `main` tests using fake `io`/`runner`: missing directory returns 1; a conversion failure returns 2 and preserves an existing `frames/` directory; success invokes ffmpeg once per ordered beat, emits the standard JSON summary, and atomically replaces frames only after validation.
 
-- [ ] **Step 2: Run to verify failure** — `npx vitest run tests/unit/stills-to-frames.test.mjs`.
+- [x] **Step 2: Run to verify failure** — `npx vitest run tests/unit/stills-to-frames.test.mjs`.
 
-- [ ] **Step 3: Implement `scripts/stills-to-frames.mjs`:**
+- [x] **Step 3: Implement `scripts/stills-to-frames.mjs`:**
 
 ```js
 #!/usr/bin/env node
@@ -1162,9 +1162,9 @@ if (isDirect(import.meta.url)) {
 
 Note: check `replaceDirectory`'s signature in `scripts/lib/files.mjs` first (extract-frames passes `(prepared, target, force, operations)`) and match it.
 
-- [ ] **Step 4: Run tests** — `npx vitest run tests/unit/stills-to-frames.test.mjs` — expect PASS. Run `npx vitest run` for the full suite.
+- [x] **Step 4: Run tests** — `npx vitest run tests/unit/stills-to-frames.test.mjs` — expect PASS. Run `npx vitest run` for the full suite.
 
-- [ ] **Step 5: Commit** — `git add scripts/stills-to-frames.mjs tests/unit/stills-to-frames.test.mjs && git commit -m "feat: stills-to-frames converter for the free stills-only site"`
+- [x] **Step 5: Commit** — `git add scripts/stills-to-frames.mjs tests/unit/stills-to-frames.test.mjs && git commit -m "feat: stills-to-frames converter for the free stills-only site"`
 
 ---
 
@@ -1179,7 +1179,7 @@ Note: check `replaceDirectory`'s signature in `scripts/lib/files.mjs` first (ext
 **Interfaces:**
 - Produces the pure helpers plus CLI `plan-generation beats ...` and `plan-generation routes <routes.json> ...`. Provider routes and prices are runtime JSON inputs and are never hard-coded.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```js
 import { describe, expect, it } from 'vitest';
@@ -1226,9 +1226,9 @@ describe('provider planning', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure** — `npx vitest run tests/unit/generation.test.mjs` — expect module-not-found failure.
+- [x] **Step 2: Run to verify failure** — `npx vitest run tests/unit/generation.test.mjs` — expect module-not-found failure.
 
-- [ ] **Step 3: Implement the pure module**
+- [x] **Step 3: Implement the pure module**
 
 ```js
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
@@ -1299,13 +1299,13 @@ export function rankProviderRoutes(routes, preset) {
 }
 ```
 
-- [ ] **Step 4: Run tests** — `npx vitest run tests/unit/generation.test.mjs` — expect PASS.
+- [x] **Step 4: Run tests** — `npx vitest run tests/unit/generation.test.mjs` — expect PASS.
 
-- [ ] **Step 5: Write the failing CLI tests** — `beats --claims 4 --sections 5` prints recommendation 5; `routes` reads a temp runtime routes file, filters unavailable/over-budget entries, ranks eligible routes for the selected preset, and prints excluded reasons; malformed JSON returns 2; invalid flags return 1.
+- [x] **Step 5: Write the failing CLI tests** — `beats --claims 4 --sections 5` prints recommendation 5; `routes` reads a temp runtime routes file, filters unavailable/over-budget entries, ranks eligible routes for the selected preset, and prints excluded reasons; malformed JSON returns 2; invalid flags return 1.
 
-- [ ] **Step 6: Run to verify failure** — `npx vitest run tests/unit/plan-generation.test.mjs` — expect module-not-found failure.
+- [x] **Step 6: Run to verify failure** — `npx vitest run tests/unit/plan-generation.test.mjs` — expect module-not-found failure.
 
-- [ ] **Step 7: Implement `scripts/plan-generation.mjs`** using exported `main(argv, io)` and the standard `isDirect` guard. Exact commands:
+- [x] **Step 7: Implement `scripts/plan-generation.mjs`** using exported `main(argv, io)` and the standard `isDirect` guard. Exact commands:
 
 ```text
 plan-generation beats --claims N --sections N [--process] [--catalog N]
@@ -1361,9 +1361,9 @@ export async function main(argv = process.argv.slice(2), io = console) {
 
 Define `integerFlag`, `optionalIntegerFlag`, and `numericFlag` beside `USAGE` using `valueAfter`; each rejects missing, negative, or non-numeric values. Import `readFile`, `resolve`, `isDirect`, and the Task 8 helpers, then add the standard direct guard. Add `scroll-wizard-plan-generation` to `package.json#bin` and its path to package enumeration tests.
 
-- [ ] **Step 8: Run tests** — `npx vitest run tests/unit/generation.test.mjs tests/unit/plan-generation.test.mjs tests/unit/package.test.mjs` — expect PASS.
+- [x] **Step 8: Run tests** — `npx vitest run tests/unit/generation.test.mjs tests/unit/plan-generation.test.mjs tests/unit/package.test.mjs` — expect PASS.
 
-- [ ] **Step 9: Commit** — `git add scripts/lib/generation.mjs scripts/plan-generation.mjs tests/unit/generation.test.mjs tests/unit/plan-generation.test.mjs tests/unit/package.test.mjs package.json && git commit -m "feat: add adaptive beat and provider planning"`
+- [x] **Step 9: Commit** — `git add scripts/lib/generation.mjs scripts/plan-generation.mjs tests/unit/generation.test.mjs tests/unit/plan-generation.test.mjs tests/unit/package.test.mjs package.json && git commit -m "feat: add adaptive beat and provider planning"`
 
 ---
 
@@ -1377,7 +1377,7 @@ Define `integerFlag`, `optionalIntegerFlag`, and `numericFlag` beside `USAGE` us
 **Interfaces:**
 - Produces CLI commands `budget <project> init|status|reserve|settle|unknown|raise-cap`; persists `budget.json` atomically. All money is integer micro-units (`1 USD = 1_000_000`) to support sub-cent quotes. Exports `createBudget`, `budgetTotals`, `reserveTransaction`, `settleTransaction`, `markTransactionUnknown`, `raiseBudgetCap`, and `main`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```js
 import { describe, expect, it } from 'vitest';
@@ -1418,9 +1418,9 @@ describe('budget ledger', () => {
 
 Add `main` tests with temp projects and fake `io`: Free init rejects a positive paid allocation; reserve persists atomically; duplicate IDs fail; `unknown` must be reconciled before reuse; failed writes leave the previous ledger valid; exit code is 1 for usage/validation and 2 for runtime I/O failure.
 
-- [ ] **Step 2: Run to verify failure** — `npx vitest run tests/unit/budget.test.mjs` — expect module-not-found failure.
+- [x] **Step 2: Run to verify failure** — `npx vitest run tests/unit/budget.test.mjs` — expect module-not-found failure.
 
-- [ ] **Step 3: Implement ledger transitions**
+- [x] **Step 3: Implement ledger transitions**
 
 ```js
 export function budgetTotals(ledger) {
@@ -1562,9 +1562,9 @@ if (isDirect(import.meta.url)) process.exitCode = await main();
 
 Add `scroll-wizard-budget` to `package.json#bin`.
 
-- [ ] **Step 4: Run tests** — `npx vitest run tests/unit/budget.test.mjs tests/unit/package.test.mjs` — expect PASS.
+- [x] **Step 4: Run tests** — `npx vitest run tests/unit/budget.test.mjs tests/unit/package.test.mjs` — expect PASS.
 
-- [ ] **Step 5: Commit** — `git add scripts/budget.mjs tests/unit/budget.test.mjs tests/unit/package.test.mjs package.json && git commit -m "feat: add hard-cap generation budget ledger"`
+- [x] **Step 5: Commit** — `git add scripts/budget.mjs tests/unit/budget.test.mjs tests/unit/package.test.mjs package.json && git commit -m "feat: add hard-cap generation budget ledger"`
 
 ---
 
@@ -1577,7 +1577,7 @@ Add `scroll-wizard-budget` to `package.json#bin`.
 **Interfaces:**
 - Consumes: every script/helper and gate from Tasks 1–9, including `budget.mjs`, adaptive beat/provider helpers, `reencode-video`, and `stills-to-frames`.
 
-- [ ] **Step 1: Rewrite the workflow sections of `SKILL.md`** (keep all Core rules, receipt discipline, handoff-card format, and prompt-craft confidentiality rules as-is). Concrete edits:
+- [x] **Step 1: Rewrite the workflow sections of `SKILL.md`** (keep all Core rules, receipt discipline, handoff-card format, and prompt-craft confidentiality rules as-is). Concrete edits:
 
 1. **Gates table** becomes:
 
@@ -1624,11 +1624,11 @@ node <skill-root>/scripts/plan-generation.mjs beats --claims 4 --sections 5
 
 8. Renumber the remaining steps (theme → 6, preview → 7, deploy → 8). Require the same-media responsive mobile checks: no horizontal overflow, safe-area padding, readable overlays, touch-sized CTAs, coarse-pointer seek tuning, iOS priming, and height-only resize stability. Do not add portrait-generation routes.
 
-- [ ] **Step 2: Update `tests/skill/scenarios.md`** wherever it names the `keyframes` gate or old step numbers; check `tests/unit/package.test.mjs` and `tests/unit/template.test.mjs` for file enumerations (new files: `scripts/reencode-video.mjs`, `scripts/stills-to-frames.mjs`; template unchanged in file list except `index.html` content) and update if they assert lists.
+- [x] **Step 2: Update `tests/skill/scenarios.md`** wherever it names the `keyframes` gate or old step numbers; check `tests/unit/package.test.mjs` and `tests/unit/template.test.mjs` for file enumerations (new files: `scripts/reencode-video.mjs`, `scripts/stills-to-frames.mjs`; template unchanged in file list except `index.html` content) and update if they assert lists.
 
-- [ ] **Step 3: Full suite** — `npx vitest run && npx playwright test` — expect PASS.
+- [x] **Step 3: Full suite** — `npx vitest run && npx playwright test` — expect PASS.
 
-- [ ] **Step 4: Commit** — `git add SKILL.md tests/ && git commit -m "docs: add adaptive budgeted v2 workflow"`
+- [x] **Step 4: Commit** — `git add SKILL.md tests/ && git commit -m "docs: add adaptive budgeted v2 workflow"`
 
 ---
 
