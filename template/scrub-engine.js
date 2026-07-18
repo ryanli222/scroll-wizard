@@ -5,6 +5,7 @@ import {
   coverRect,
   decodeWindow,
   frameFilename,
+  lingerEase,
   overlayOpacity,
   progressToFrame,
   scrollProgress,
@@ -333,9 +334,7 @@ function runEngine(config, overlayNodes) {
   store = new FrameStore(config, (fraction) => {
     loadProgress.value = fraction;
   });
-  store.preloadAll().then(() => {
-    loader.hidden = true;
-  });
+  store.preloadAll();
 
   let smoothProgress = 0;
   let lastTargetFrame = -1;
@@ -358,7 +357,9 @@ function runEngine(config, overlayNodes) {
     const raw = scrollProgress(
       window.scrollY, scrub.offsetTop, scrub.offsetHeight, innerHeight,
     );
-    const targetProgress = applyHolds(raw, holds);
+    const targetProgress = lingerEase(
+      applyHolds(raw, holds), config.scrub.linger ?? 0,
+    );
     smoothProgress = smooth(smoothProgress, targetProgress, k, dt);
     const targetFrame = progressToFrame(smoothProgress, config.frames.count);
     const direction = targetFrame - lastTargetFrame;
@@ -375,6 +376,7 @@ function runEngine(config, overlayNodes) {
       lastDrawnIndex = found.index;
       if (!posterHidden) {
         poster.classList.add('is-hidden');
+        loader.hidden = true;
         posterHidden = true;
       }
     }

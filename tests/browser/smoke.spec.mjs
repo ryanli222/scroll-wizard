@@ -31,6 +31,25 @@ test('poster appears before delayed sequence and canvas scrubs', async ({ page }
   await expect(page.locator('#poster')).toHaveClass(/is-hidden/);
 });
 
+test('loader hides after the first painted frame while background frames load', async ({ page }) => {
+  await page.route('**/frames/frame-*.webp', async (route) => {
+    const frame = Number(route.request().url().match(/frame-(\d+)\.webp$/)?.[1]);
+    if (frame > 13) {
+      await new Promise((resolve) => setTimeout(resolve, 10_000));
+    }
+    await route.continue();
+  });
+  await page.goto('/');
+
+  await expect(page.locator('#loader')).toBeHidden();
+  const state = await page.evaluate(() => ({
+    lastFrame: window.__SCROLL_WIZARD_DEBUG__?.lastFrame ?? -1,
+    decodedCount: window.__SCROLL_WIZARD_DEBUG__?.decodedCount ?? 0,
+  }));
+  expect(state.lastFrame).toBeGreaterThanOrEqual(0);
+  expect(state.decodedCount).toBeLessThan(30);
+});
+
 test('visibility controls inert and keyboard focus', async ({ page }) => {
   await page.goto('/');
   const overlay = page.locator('[data-overlay-index="0"]');
