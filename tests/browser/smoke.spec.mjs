@@ -198,9 +198,14 @@ test('video mode scrubs the video with scroll', async ({ page, request }) => {
 test('video gesture priming is installed before loading and runs only once', async ({ page, request }) => {
   await requireVideoFixture(request);
   await page.addInitScript(() => {
-    window.__PRIME_CALLS__ = { play: 0, pause: 0 };
+    window.__PRIME_CALLS__ = { emptyRejects: 0, pause: 0, play: 0, sources: [] };
     HTMLMediaElement.prototype.play = function play() {
       window.__PRIME_CALLS__.play += 1;
+      window.__PRIME_CALLS__.sources.push(this.currentSrc);
+      if (!this.currentSrc) {
+        window.__PRIME_CALLS__.emptyRejects += 1;
+        return Promise.reject(new Error('No playable source'));
+      }
       return Promise.resolve();
     };
     HTMLMediaElement.prototype.pause = function pause() {
@@ -216,10 +221,40 @@ test('video gesture priming is installed before loading and runs only once', asy
   await videoRequest;
   await page.dispatchEvent('body', 'pointerdown');
   await page.dispatchEvent('body', 'touchstart');
-  await expect.poll(() => page.evaluate(() => window.__PRIME_CALLS__)).toEqual({
-    play: 1,
-    pause: 1,
+  await expect.poll(() => page.evaluate(() => window.__PRIME_CALLS__.pause)).toBe(1);
+  const priming = await page.evaluate(() => window.__PRIME_CALLS__);
+  expect(priming.emptyRejects).toBe(0);
+  expect(priming.play).toBe(1);
+  expect(priming.sources[0]).toContain('/video/media/video.webm');
+  await page.waitForSelector('#loader', { state: 'hidden' });
+  await expect.poll(() => page.evaluate(() =>
+    document.getElementById('scrub-video').currentSrc.startsWith('blob:'))).toBe(true);
+  await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.4));
+  await page.waitForFunction(() => window.__SCROLL_WIZARD_DEBUG__.videoTime > 0.2);
+  expect(await page.evaluate(() =>
+    document.getElementById('scrub-video').currentSrc)).toContain('blob:');
+});
+
+test('video setup error removes pending priming handlers', async ({ page, request }) => {
+  await requireVideoFixture(request);
+  await page.addInitScript(() => {
+    window.__SETUP_ERROR_PLAY_CALLS__ = 0;
+    HTMLMediaElement.prototype.play = function play() {
+      window.__SETUP_ERROR_PLAY_CALLS__ += 1;
+      return Promise.resolve();
+    };
+    HTMLMediaElement.prototype.pause = () => {};
   });
+  await page.route('**/media/poster.webp', (route) => route.fulfill({
+    status: 404,
+    body: 'missing poster',
+  }));
+  await page.goto(videoFixtureUrl);
+  await expect(page.locator('#fatal-error')).toBeVisible();
+  await page.dispatchEvent('body', 'pointerdown');
+  await page.dispatchEvent('body', 'touchstart');
+  await page.waitForTimeout(50);
+  expect(await page.evaluate(() => window.__SETUP_ERROR_PLAY_CALLS__)).toBe(0);
 });
 
 test('video seek contract coalesces seeks and waits for first seeked paint', async ({ page, request }) => {
@@ -370,17 +405,41 @@ test('phone viewport keeps video scrub content usable through a height resize', 
 
     await page.waitForTimeout(800);
     const beforeResize = await page.evaluate(() => ({
+      distance: document.getElementById('scrub').offsetHeight - innerHeight,
       progress: window.__SCROLL_WIZARD_DEBUG__.scrubProgress,
       time: window.__SCROLL_WIZARD_DEBUG__.videoTime,
     }));
     await page.setViewportSize({ width: 390, height: 700 });
     await page.waitForTimeout(800);
     const afterResize = await page.evaluate(() => ({
+      distance: document.getElementById('scrub').offsetHeight - innerHeight,
       progress: window.__SCROLL_WIZARD_DEBUG__.scrubProgress,
       time: window.__SCROLL_WIZARD_DEBUG__.videoTime,
     }));
+    expect(Math.abs(afterResize.distance - beforeResize.distance)).toBeLessThanOrEqual(1);
     expect(Math.abs(afterResize.progress - beforeResize.progress)).toBeLessThanOrEqual(0.005);
     expect(Math.abs(afterResize.time - beforeResize.time)).toBeLessThanOrEqual(0.02);
+
+    await page.evaluate(() => {
+      const scrub = document.getElementById('scrub');
+      scrollTo(0, scrub.offsetTop + scrub.offsetHeight - innerHeight);
+    });
+    await expect.poll(() => page.evaluate(() =>
+      window.__SCROLL_WIZARD_DEBUG__.scrubProgress)).toBeGreaterThan(0.995);
+    await expect.poll(() => page.evaluate(() =>
+      window.__SCROLL_WIZARD_DEBUG__.videoTime)).toBeGreaterThan(1.8);
+
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.waitForTimeout(100);
+    const grown = await page.evaluate(() => ({
+      distance: document.getElementById('scrub').offsetHeight - innerHeight,
+      progress: window.__SCROLL_WIZARD_DEBUG__.scrubProgress,
+    }));
+    expect(Math.abs(grown.distance - beforeResize.distance)).toBeLessThanOrEqual(1);
+    expect(grown.progress).toBeGreaterThan(0.995);
+    await page.evaluate(() => scrollTo(0, document.getElementById('scrub').offsetTop));
+    await expect.poll(() => page.evaluate(() =>
+      window.__SCROLL_WIZARD_DEBUG__.scrubProgress)).toBeLessThan(0.005);
   } finally {
     await context.close();
   }
@@ -417,6 +476,68 @@ test('phone viewport supports coarse short landscape with the same video media',
     expect(layout.maxHeight).not.toBe('none');
     expect(layout.backdropFilter).not.toContain('18px');
     expect(layout.epsilon).toBe(0.02);
+  } finally {
+    await context.close();
+  }
+});
+
+test('phone viewport keeps tall landscape overlay content reachable', async ({ browser, request }) => {
+  await requireVideoFixture(request);
+  const context = await browser.newContext({
+    viewport: { width: 844, height: 390 },
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  try {
+    await page.route('**/video/config.json', async (route) => {
+      const response = await route.fetch();
+      const config = await response.json();
+      config.overlays[0].body = Array(40).fill('Tall fixture body copy.').join(' ');
+      config.overlays[0].stats = Array.from({ length: 20 }, (_value, index) => ({
+        label: 'Metric ' + (index + 1),
+        value: String(index + 1),
+      }));
+      await route.fulfill({ response, json: config });
+    });
+    await page.goto(videoFixtureUrl);
+    await page.waitForSelector('#loader', { state: 'hidden' });
+    await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.4));
+    const overlay = page.locator('[data-overlay-index="0"]');
+    await expect(overlay).toHaveJSProperty('inert', false);
+    const initial = await overlay.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const title = node.querySelector('.overlay__title').getBoundingClientRect();
+      return {
+        clientHeight: node.clientHeight,
+        overflowY: getComputedStyle(node).overflowY,
+        rect: { bottom: rect.bottom, top: rect.top },
+        scrollHeight: node.scrollHeight,
+        title: { bottom: title.bottom, top: title.top },
+      };
+    });
+    expect(initial.overflowY).toBe('auto');
+    expect(initial.scrollHeight).toBeGreaterThan(initial.clientHeight);
+    expect(initial.rect.top).toBeGreaterThanOrEqual(0);
+    expect(initial.rect.bottom).toBeLessThanOrEqual(390);
+    expect(initial.title.top).toBeGreaterThanOrEqual(initial.rect.top);
+    expect(initial.title.bottom).toBeLessThanOrEqual(initial.rect.bottom);
+
+    await overlay.evaluate((node) => { node.scrollTop = node.scrollHeight; });
+    const reachable = await overlay.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const stats = node.querySelector('.stats').getBoundingClientRect();
+      const cta = node.querySelector('.overlay__cta').getBoundingClientRect();
+      return {
+        ctaBottom: cta.bottom,
+        ctaTop: cta.top,
+        rectBottom: rect.bottom,
+        rectTop: rect.top,
+        statsBottom: stats.bottom,
+      };
+    });
+    expect(reachable.statsBottom).toBeLessThanOrEqual(reachable.rectBottom);
+    expect(reachable.ctaTop).toBeGreaterThanOrEqual(reachable.rectTop);
+    expect(reachable.ctaBottom).toBeLessThanOrEqual(reachable.rectBottom);
   } finally {
     await context.close();
   }

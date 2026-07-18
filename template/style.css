@@ -149,7 +149,10 @@ h1, h2, h3 { font-family: var(--display); }
 
 @media (pointer: coarse) and (max-height: 500px) {
   .overlay {
-    max-height: calc(100vh - 1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height: calc(100vh - 4rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
     padding: .75rem 1rem;
     backdrop-filter: blur(6px);
   }

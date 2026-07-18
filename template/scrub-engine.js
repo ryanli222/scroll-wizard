@@ -458,15 +458,22 @@ async function loadScrubVideo(config) {
 
 function installVideoPrime(video) {
   let primed = false;
+  let priming = false;
   const cleanup = () => {
     removeEventListener('pointerdown', prime);
     removeEventListener('touchstart', prime);
   };
   const prime = () => {
-    if (primed) return;
-    primed = true;
-    cleanup();
-    video.play().then(() => video.pause()).catch(() => {});
+    if (primed || priming) return;
+    priming = true;
+    video.play().then(() => {
+      video.pause();
+      primed = true;
+      priming = false;
+      cleanup();
+    }).catch(() => {
+      priming = false;
+    });
   };
   addEventListener('pointerdown', prime);
   addEventListener('touchstart', prime, { passive: true });
@@ -492,6 +499,19 @@ function runVideoEngine(config, overlayNodes, video) {
     sectionTop: scrub.offsetTop,
     distance: Math.max(1, scrub.offsetHeight - innerHeight),
   };
+  const preserveProgressGeometry = () => {
+    if (Math.abs(innerWidth - progressGeometry.width) >= 1) {
+      scrub.style.setProperty('height', config.scrub.heightVh + 'vh');
+      progressGeometry = {
+        width: innerWidth,
+        sectionTop: scrub.offsetTop,
+        distance: Math.max(1, scrub.offsetHeight - innerHeight),
+      };
+      return;
+    }
+    scrub.style.setProperty('height', (progressGeometry.distance + innerHeight) + 'px');
+  };
+  addEventListener('resize', preserveProgressGeometry);
   const readProgress = () => {
     if (Math.abs(innerWidth - progressGeometry.width) >= 1) {
       progressGeometry = {
@@ -561,12 +581,15 @@ async function start() {
 
     applyTheme(config);
     if (!reducedMotion && selectScrubMode(config) === 'video') {
+      scrubVideo.src = config.video.src;
+      scrubVideo.load();
       removeVideoPrime = installVideoPrime(scrubVideo);
     }
     await loadPoster(config);
     overlayNodes = renderCopy(config);
     await loadFont(config);
   } catch (error) {
+    removeVideoPrime();
     showFatalError(error);
     return;
   }
