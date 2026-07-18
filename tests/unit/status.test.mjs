@@ -803,6 +803,7 @@ describe('v2 status gates', () => {
     const values = JSON.parse(await readFile(valuesPath, 'utf8'));
     delete values.scrub.mode;
     await writeJson(valuesPath, values);
+    await writeJson(join(projectDir, 'site', 'config.json'), { frames: { count: 1 } });
 
     const manifest = await buildGateManifest(projectDir, 'extraction');
     expect(manifest.map((entry) => entry.path)).toEqual([
@@ -930,6 +931,40 @@ describe('v2 status gates', () => {
 
     await utimes(
       join(projectDir, 'media', 'video.mp4'),
+      new Date(now + 30_000),
+      new Date(now + 30_000),
+    );
+    expect((await buildInventory(projectDir)).stale).toContain('site');
+  });
+
+  it('forces frames when video generation is disabled despite valid leftover media', async () => {
+    const projectDir = await createV2Project({ videoEnabled: false, media: true });
+    const now = Date.now();
+    for (const name of ['video.mp4', 'poster.webp', 'media.json']) {
+      await utimes(
+        join(projectDir, 'media', name),
+        new Date(now + 20_000),
+        new Date(now + 20_000),
+      );
+    }
+
+    const manifest = await buildGateManifest(projectDir, 'extraction');
+    expect(manifest.map((entry) => entry.path)).toEqual([
+      'frames/frame-0001.webp', 'values.json#extraction',
+    ]);
+    const valuesPath = join(projectDir, 'values.json');
+    const values = JSON.parse(await readFile(valuesPath, 'utf8'));
+    delete values.scrub.mode;
+    await writeJson(valuesPath, values);
+    await writeJson(join(projectDir, 'site', 'config.json'), { frames: { count: 1 } });
+    expect((await buildGateManifest(projectDir, 'extraction')).map((entry) => entry.path))
+      .toEqual(['frames/frame-0001.webp', 'values.json#extraction']);
+    const inactiveMedia = await buildInventory(projectDir);
+    expect(inactiveMedia.scrubMode).toBe('frames');
+    expect(inactiveMedia.stale).not.toContain('site');
+
+    await utimes(
+      join(projectDir, 'frames', 'frame-0001.webp'),
       new Date(now + 30_000),
       new Date(now + 30_000),
     );

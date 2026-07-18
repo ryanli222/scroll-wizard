@@ -46,6 +46,11 @@ export function valuesProjection(values, gate) {
   throw new Error('No values projection for gate: ' + gate);
 }
 
+function effectiveScrubMode(values, mediaAvailable) {
+  if (values?.generation?.video === false) return 'frames';
+  return values?.scrub?.mode ?? (mediaAvailable ? 'video' : 'frames');
+}
+
 function compareCodePoints(left, right) {
   const leftPoints = left[Symbol.iterator]();
   const rightPoints = right[Symbol.iterator]();
@@ -277,7 +282,7 @@ export async function buildGateManifest(projectDir, gate, inspect = lstat) {
       ? await regularMediaFiles(join(siteRoot, 'media'), inspect)
       : [];
     const media = projectMedia.length ? projectMedia : siteMedia;
-    const scrubMode = values.scrub?.mode ?? (media.length ? 'video' : 'frames');
+    const scrubMode = effectiveScrubMode(values, media.length > 0);
     if (scrubMode === 'video') {
       return media.length ? sortManifestEntries(await hashFiles(media, 'media')) : null;
     }
@@ -352,8 +357,10 @@ export async function buildInventory(projectDir, inspect = lstat) {
   const siteMediaAvailable = siteRootAvailable && (
     await regularMediaFiles(join(projectDir, 'site', 'media'), inspect)
   ).length > 0;
-  const scrubMode = values?.scrub?.mode
-    ?? (projectMediaAvailable || siteMediaAvailable ? 'video' : 'frames');
+  const scrubMode = effectiveScrubMode(
+    values,
+    projectMediaAvailable || siteMediaAvailable,
+  );
   let manifestPairs = await Promise.all(GATES.map(async (gate) => {
     const entries = await buildGateManifest(projectDir, gate, inspect);
     return [gate, entries ? manifestHash(entries) : null];
