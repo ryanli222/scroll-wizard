@@ -8,13 +8,16 @@ import {
   lingerEase,
   overlayOpacity,
   progressToFrame,
+  progressToTime,
   scrollProgress,
+  selectScrubMode,
   smooth,
   validateConfig,
 } from './scrub-core.js';
 
 const scrub = document.getElementById('scrub');
 const poster = document.getElementById('poster');
+const scrubVideo = document.getElementById('scrub-video');
 const canvas = document.getElementById('scrub-canvas');
 const overlayLayer = document.getElementById('overlay-layer');
 const loadProgress = document.getElementById('load-progress');
@@ -99,7 +102,9 @@ function showFatalError(error) {
 }
 
 async function loadPoster(config) {
-  poster.src = config.frames.poster;
+  poster.src = selectScrubMode(config) === 'video'
+    ? config.video.poster
+    : config.frames.poster;
   poster.alt = config.brand.imageAlt || config.brand.tagline
     || (config.brand.name + ' hero scene');
   try {
@@ -321,7 +326,25 @@ if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
     get decodedCount() { return store?.bitmaps.size ?? 0; },
     get lastFrame() { return lastDrawnIndex; },
     get failedFrames() { return [...(store?.failed ?? [])]; },
+    get videoTime() { return document.getElementById('scrub-video')?.currentTime ?? 0; },
   };
+}
+
+function updateOverlays(overlayNodes, raw) {
+  for (const { data, node } of overlayNodes) {
+    const opacity = overlayOpacity(raw, data.at);
+    node.style.opacity = String(opacity);
+    node.style.setProperty('--reveal', String(opacity));
+    const visible = opacity >= 0.05;
+    node.inert = !visible;
+    node.style.pointerEvents = visible ? 'auto' : 'none';
+  }
+}
+
+function updateProgressBar() {
+  const pageProgress = Math.min(1, Math.max(0,
+    scrollY / Math.max(1, document.documentElement.scrollHeight - innerHeight)));
+  progressBar.style.width = (pageProgress * 100) + '%';
 }
 
 function runEngine(config, overlayNodes) {
@@ -381,22 +404,78 @@ function runEngine(config, overlayNodes) {
       }
     }
 
-    for (const { data, node } of overlayNodes) {
-      const opacity = overlayOpacity(raw, data.at);
-      node.style.opacity = String(opacity);
-      node.style.setProperty('--reveal', String(opacity));
-      const visible = opacity >= 0.05;
-      node.inert = !visible;
-      node.style.pointerEvents = visible ? 'auto' : 'none';
-    }
-
-    const pageProgress = Math.min(1, Math.max(0,
-      scrollY / Math.max(1, document.documentElement.scrollHeight - innerHeight)));
-    progressBar.style.width = (pageProgress * 100) + '%';
+    updateOverlays(overlayNodes, raw);
+    updateProgressBar();
 
     requestAnimationFrame(tick);
   }
 
+  requestAnimationFrame(tick);
+}
+
+async function loadScrubVideo(config) {
+  const response = await fetch(config.video.src);
+  if (!response.ok) throw new Error('Video request failed: HTTP ' + response.status);
+  const blob = await response.blob();
+  scrubVideo.src = URL.createObjectURL(blob);
+  await new Promise((resolve, reject) => {
+    if (scrubVideo.readyState >= 1) {
+      resolve();
+      return;
+    }
+    scrubVideo.addEventListener('loadedmetadata', resolve, { once: true });
+    scrubVideo.addEventListener('error', () => {
+      reject(new Error('Scrub video failed to load.'));
+    }, { once: true });
+  });
+  return scrubVideo;
+}
+
+function runVideoEngine(config, overlayNodes, video) {
+  const holds = (config.overlays ?? [])
+    .filter((overlay) => overlay.hold)
+    .map((overlay) => overlay.at);
+  const k = alphaToK(config.scrub.smoothing);
+  const linger = config.scrub.linger ?? 0;
+  const duration = Number.isFinite(video.duration) && video.duration > 0
+    ? video.duration
+    : config.video.duration;
+  const epsilon = matchMedia('(pointer: coarse)').matches ? 0.02 : 0.008;
+
+  const prime = () => {
+    video.play().then(() => video.pause()).catch(() => {});
+  };
+  addEventListener('pointerdown', prime, { once: true });
+  addEventListener('touchstart', prime, { once: true, passive: true });
+
+  let posterHidden = false;
+  video.addEventListener('seeked', () => {
+    if (posterHidden) return;
+    posterHidden = true;
+    video.classList.add('is-ready');
+    poster.classList.add('is-hidden');
+  });
+
+  loader.hidden = true;
+
+  let smoothProgress = 0;
+  let lastTime = performance.now();
+  function tick(now) {
+    const dt = Math.min(0.1, Math.max(0, (now - lastTime) / 1000));
+    lastTime = now;
+    const raw = scrollProgress(
+      window.scrollY, scrub.offsetTop, scrub.offsetHeight, innerHeight,
+    );
+    const target = lingerEase(applyHolds(raw, holds), linger);
+    smoothProgress = smooth(smoothProgress, target, k, dt);
+    const time = progressToTime(smoothProgress, duration);
+    if (!video.seeking && Math.abs(video.currentTime - time) > epsilon) {
+      video.currentTime = time;
+    }
+    updateOverlays(overlayNodes, raw);
+    updateProgressBar();
+    requestAnimationFrame(tick);
+  }
   requestAnimationFrame(tick);
 }
 
@@ -442,7 +521,18 @@ async function start() {
     }
   }
 
-  runEngine(config, overlayNodes);
+  if (selectScrubMode(config) === 'video') {
+    let video;
+    try {
+      video = await loadScrubVideo(config);
+    } catch (error) {
+      showFatalError(error);
+      return;
+    }
+    runVideoEngine(config, overlayNodes, video);
+  } else {
+    runEngine(config, overlayNodes);
+  }
 }
 
 start();

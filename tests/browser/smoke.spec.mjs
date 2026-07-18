@@ -6,6 +6,8 @@ test.skip(
   'Playwright Chromium is not installed; browser smoke suite skipped.',
 );
 
+const videoFixtureUrl = '/video/';
+
 test('poster appears before delayed sequence and canvas scrubs', async ({ page }) => {
   await page.route('**/frames/frame-*.webp', async (route) => {
     if (!route.request().url().endsWith('frame-0001.webp')) {
@@ -118,4 +120,59 @@ test('decoded bitmap count never exceeds the configured bound', async ({ page })
   await expect.poll(() => page.evaluate(() =>
     window.__SCROLL_WIZARD_DEBUG__?.decodedCount ?? 0)).toBeGreaterThanOrEqual(20);
   expect(await decodedCount()).toBeLessThanOrEqual(25);
+});
+
+test('video mode scrubs the video with scroll', async ({ page }) => {
+  await page.goto(videoFixtureUrl);
+  await page.waitForSelector('#loader', { state: 'hidden' });
+  await page.mouse.wheel(0, 4000);
+  await page.waitForFunction(() =>
+    window.__SCROLL_WIZARD_DEBUG__
+      && window.__SCROLL_WIZARD_DEBUG__.videoTime > 0.2);
+  await expect(page.locator('#poster')).toHaveClass(/is-hidden/);
+});
+
+test('phone viewport keeps video scrub content usable through a height resize', async ({ browser }) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  try {
+    await page.goto(videoFixtureUrl);
+    await page.waitForSelector('#loader', { state: 'hidden' });
+    await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.4));
+    await page.waitForFunction(() =>
+      window.__SCROLL_WIZARD_DEBUG__
+        && window.__SCROLL_WIZARD_DEBUG__.videoTime > 0.2);
+
+    const layout = await page.evaluate(() => {
+      const root = document.documentElement;
+      const overlay = document.querySelector('[data-overlay-index="0"]');
+      const cta = overlay.querySelector('.overlay__cta');
+      const overlayRect = overlay.getBoundingClientRect();
+      const ctaRect = cta.getBoundingClientRect();
+      return {
+        noHorizontalOverflow: root.scrollWidth <= root.clientWidth,
+        overlayInsideViewport: overlayRect.left >= 0
+          && overlayRect.right <= innerWidth
+          && overlayRect.top >= 0
+          && overlayRect.bottom <= innerHeight,
+        ctaWidth: ctaRect.width,
+        ctaHeight: ctaRect.height,
+      };
+    });
+    expect(layout.noHorizontalOverflow).toBe(true);
+    expect(layout.overlayInsideViewport).toBe(true);
+    expect(layout.ctaWidth).toBeGreaterThanOrEqual(44);
+    expect(layout.ctaHeight).toBeGreaterThanOrEqual(44);
+
+    const beforeResize = await page.evaluate(() =>
+      window.__SCROLL_WIZARD_DEBUG__.videoTime);
+    await page.setViewportSize({ width: 390, height: 700 });
+    await expect.poll(() => page.evaluate(() =>
+      window.__SCROLL_WIZARD_DEBUG__.videoTime)).toBeGreaterThan(beforeResize - 0.05);
+  } finally {
+    await context.close();
+  }
 });

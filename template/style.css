@@ -43,6 +43,15 @@ a:focus-visible {
   width: 100%;
   height: 100%;
 }
+.scrub__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+}
+.scrub__video.is-ready { opacity: 1; }
 .scrub__poster { object-fit: cover; transition: opacity 240ms ease; }
 .scrub__poster.is-hidden { opacity: 0; pointer-events: none; }
 .scrub__canvas { display: block; }
@@ -72,7 +81,10 @@ a:focus-visible {
 .overlay--right { right: clamp(1rem, 6vw, 6rem); }
 .overlay__cta, .outro__cta {
   pointer-events: auto;
-  display: inline-block;
+  display: inline-grid;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
   margin-top: 1rem;
   padding: .85rem 1.75rem;
   background: var(--accent);
@@ -112,9 +124,26 @@ h1, h2, h3 { font-family: var(--display); }
 
 @media (max-width: 700px) {
   .overlay--left, .overlay--right {
-    left: 1rem;
-    right: 1rem;
+    left: max(1rem, env(safe-area-inset-left));
+    right: max(1rem, env(safe-area-inset-right));
     width: auto;
+  }
+  .overlay {
+    max-height: calc(100vh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding: 1.25rem;
+    backdrop-filter: blur(10px);
+  }
+  .loader {
+    left: max(1rem, env(safe-area-inset-left));
+    bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  .scrub__vignette {
+    background: linear-gradient(to bottom, transparent 45%, color-mix(in srgb, var(--bg) 55%, transparent));
+  }
+  .footer {
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    padding-left: max(1rem, env(safe-area-inset-left));
   }
 }
 
@@ -122,7 +151,7 @@ h1, h2, h3 { font-family: var(--display); }
   .scrub { height: auto !important; }
   .scrub__sticky { position: relative; height: auto; overflow: visible; }
   .scrub__poster { position: relative; width: 100%; min-height: 60vh; }
-  .scrub__canvas, .loader { display: none; }
+  .scrub__canvas, .scrub__video, .loader { display: none; }
   .overlays { position: relative; display: grid; gap: 1rem; padding: 1rem; }
   .overlay, .overlay--center, .overlay--left, .overlay--right {
     position: relative;

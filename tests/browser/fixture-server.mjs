@@ -1,14 +1,31 @@
 // Dependency-free static server for the browser smoke suite. Serves the
 // shipped template files as-is, swaps in a small deterministic config, and
-// synthesizes 8 tiny PNG frames on the fly so the suite needs no fixture
-// binaries checked into the repo.
+// synthesizes tiny frame and video assets on the fly so the suite needs no
+// fixture binaries checked into the repo.
 import { createServer } from 'node:http';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
 
 const templateDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'template');
+const videoFixtureDir = mkdtempSync(join(tmpdir(), 'scroll-wizard-video-'));
+const videoPath = join(videoFixtureDir, 'video.webm');
+const videoPosterPath = join(videoFixtureDir, 'poster.webp');
+
+execFileSync('ffmpeg', [
+  '-hide_banner', '-loglevel', 'error', '-y',
+  '-f', 'lavfi', '-i', 'testsrc=duration=2:size=320x180:rate=12',
+  '-c:v', 'libvpx-vp9', '-g', '1', '-crf', '40', '-b:v', '0', videoPath,
+]);
+execFileSync('ffmpeg', [
+  '-hide_banner', '-loglevel', 'error', '-y',
+  '-f', 'lavfi', '-i', 'testsrc=duration=1:size=320x180:rate=1',
+  '-frames:v', '1', videoPosterPath,
+]);
 
 function crc32(buffer) {
   let crc = 0xffffffff;
@@ -82,16 +99,34 @@ const config = {
   ],
 };
 
+const videoConfig = {
+  ...config,
+  scrub: { heightVh: 400, smoothing: 0.12, mode: 'video' },
+  video: {
+    src: 'media/video.webm',
+    poster: 'media/poster.webp',
+    duration: 2,
+  },
+};
+delete videoConfig.frames;
+
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webm': 'video/webm',
+  '.webp': 'image/webp',
 };
 
 async function serveStatic(res, pathname) {
-  const relative = normalize(pathname === '/' ? '/index.html' : pathname)
+  const sitePath = pathname === '/video' || pathname === '/video/'
+    ? '/index.html'
+    : pathname.startsWith('/video/')
+      ? pathname.slice('/video'.length)
+      : pathname;
+  const relative = normalize(sitePath === '/' ? '/index.html' : sitePath)
     .replace(/^([/\\]\.\.)+/, '');
   const filePath = join(templateDir, relative);
   if (filePath !== templateDir && !filePath.startsWith(templateDir + '\\')
@@ -113,9 +148,21 @@ const framePattern = /^\/frames\/frame-(\d{4})\.webp$/;
 const server = createServer(async (req, res) => {
   const { pathname } = new URL(req.url, 'http://127.0.0.1');
 
-  if (pathname === '/config.json') {
+  if (pathname === '/config.json' || pathname === '/video/config.json') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify(config));
+    res.end(JSON.stringify(pathname.startsWith('/video/') ? videoConfig : config));
+    return;
+  }
+
+  if (pathname === '/video/media/video.webm') {
+    res.writeHead(200, { 'Content-Type': contentTypes['.webm'] });
+    res.end(await readFile(videoPath));
+    return;
+  }
+
+  if (pathname === '/video/media/poster.webp') {
+    res.writeHead(200, { 'Content-Type': contentTypes['.webp'] });
+    res.end(await readFile(videoPosterPath));
     return;
   }
 
@@ -135,3 +182,6 @@ const server = createServer(async (req, res) => {
 server.listen(4173, '127.0.0.1', () => {
   console.log('Fixture server listening on http://127.0.0.1:4173');
 });
+
+const cleanup = () => rmSync(videoFixtureDir, { recursive: true, force: true });
+process.once('exit', cleanup);
