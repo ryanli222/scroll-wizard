@@ -8,11 +8,13 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div id="progress-bar" class="progress-bar" aria-hidden="true"></div>
   <main>
     <section id="scrub" class="scrub" aria-label="Visual story">
       <div class="scrub__sticky">
         <img id="poster" class="scrub__poster" alt="">
         <canvas id="scrub-canvas" class="scrub__canvas" aria-hidden="true"></canvas>
+        <div class="scrub__vignette" aria-hidden="true"></div>
         <div id="overlay-layer" class="overlays"></div>
         <div id="loader" class="loader" aria-live="polite">
           <span id="load-label">Loading scene</span>

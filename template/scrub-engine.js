@@ -21,6 +21,7 @@ const loader = document.getElementById('loader');
 const outro = document.getElementById('outro');
 const fatalError = document.getElementById('fatal-error');
 const footerBrand = document.getElementById('footer-brand');
+const progressBar = document.getElementById('progress-bar');
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -381,10 +382,15 @@ function runEngine(config, overlayNodes) {
     for (const { data, node } of overlayNodes) {
       const opacity = overlayOpacity(raw, data.at);
       node.style.opacity = String(opacity);
+      node.style.setProperty('--reveal', String(opacity));
       const visible = opacity >= 0.05;
       node.inert = !visible;
       node.style.pointerEvents = visible ? 'auto' : 'none';
     }
+
+    const pageProgress = Math.min(1, Math.max(0,
+      scrollY / Math.max(1, document.documentElement.scrollHeight - innerHeight)));
+    progressBar.style.width = (pageProgress * 100) + '%';
 
     requestAnimationFrame(tick);
   }
