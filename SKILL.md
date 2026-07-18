@@ -38,14 +38,20 @@ description: Use when a user wants a scroll-scrub video website, scrollytelling 
    hurry or because artifacts already exist further downstream.
 6. Never approve a gate on the user's behalf, no matter how confident the state looks.
 
+Trust the report's backward-compatible state: a valid v1 `keyframes` receipt maps to
+`storyboard`, and `stills-preview` is skipped only for a legacy project that has a v1
+video but no beat prompts. Do not recreate or re-approve a receipt that status reports
+as valid.
+
 ## Gates
 
 | Gate | Kind | Persist before asking | Approve name |
 |---|---|---|---|
 | Brief | Hard | brief.md and intake values | brief |
-| Keyframe set | Light | active prompts and canonical role images | keyframes |
+| Storyboard | Light | active beat prompts, beat stills, and Pencil-reviewed overlays in values.json | storyboard |
+| Stills preview | Light | stable beat-frame preview + reviewed overlays (legacy-only skip when a v1 video has no beat prompts) | stills-preview |
 | Video watched | Hard | prompts/video.txt and input/video.mp4 | video |
-| Extraction review | Light | frames plus holds and posterIndex in values.json | extraction |
+| Extraction review | Light | frames + holds/posterIndex (frames mode) or media/ re-encode report (video mode) | extraction |
 | Theme tokens | Light | theme in values.json | theme |
 | Preview | Hard | complete site directory | preview |
 
@@ -79,67 +85,112 @@ full artifact dump) — they are never skipped and never auto-approved.
 
 - Establish whether this is a product-scrub (one hero subject) or a journey
   (fly-through/route) register.
-- Ask only brand, vibe, motion, whether stopped scenes ("holds") are wanted, and a CTA
-  first. Keep the first pass short.
+- Ask brand, vibe, motion, stopped scenes ("holds"), and CTA. Also collect claim count,
+  section count, whether the story has a process, and catalog-item count.
+- Run `plan-generation.mjs beats` with those density inputs. Explain the resulting
+  3-to-10 beat recommendation, let the user override it, and persist the confirmed
+  count in `values.json`; the user, not the heuristic, has final control.
+- Ask for Free, Cheapest, Balanced, or Quality-first plus an exact hard cap in integer
+  micros. Explain the choice and initialize `budget.json` with `budget.mjs init` before
+  any paid call. Free has a zero cap and uses only user-provided/manual assets.
+- Ask for the payload preset. Always state its estimated bytes and mid-4G load time;
+  never describe a preset as merely "desktop" or "mobile" without the payload cost.
 - Ask per-stop purpose/copy/product/CTA/position only when the user actually wants
   stops.
+- For product-scrub, default `scrub.linger` to `0.35`, align holds with feature beats,
+  and plan orbit/dolly/light-sweep/peel-back motion around one hero product on clean
+  ground. Journey remains the fly-through/route register.
 - Calculate hold speed-up and `recommendHeightVh` from the requested holds
   (`heightVh = 100 + (baseVh - 100) / (1 - totalHoldFraction)`) and explain the
   trade-off in one sentence (longer page, slower scroll per pixel).
-- Offer a desktop-rich and a mobile-first preset, each with an estimated load time.
 - Write `brief.md` and the creative portions of `values.json` (brand, theme seed,
-  scrub, overlays skeleton) before asking for the brief gate go-ahead.
+  generation choice, confirmed beat count, scrub, overlays skeleton) before asking for
+  the brief gate go-ahead.
 
-## Step 2: Keyframes
+## Step 2: Storyboard
 
-- Choose one of: first frame only, first+last, up to three reference images, or no
-  keyframes (generated video only).
-- Write only the active `prompts/keyframe-<role>.txt` files for the roles chosen.
-- Manual mode: show one handoff card per required image, then end the turn.
-- API mode: run a separate money gate for each image — one exact prompt, one cost
-  statement, one approval, per image.
+- Draft a free text-only outline for the confirmed beat count and review its narrative
+  before acquiring images.
+- Write one active `prompts/keyframe-beat-<n>.txt` per beat. Beat 1 is the video's
+  first-frame anchor and the final beat is its last-frame anchor when the later route
+  supports those capabilities.
+- Collect stills into `input/keyframes/beat-<n>.<ext>`. Manual mode prints one handoff
+  card and ends the turn. API mode uses a separate per-image money gate: show the exact
+  prompt/provider/model/maximum quote/remaining-after-call/expected result, receive
+  approval, reserve with `budget.mjs reserve`, then `settle` or mark `unknown`.
 - On intake of dropped files: validate every file, view it, propose a role mapping,
   and explicitly ask the user when the mapping is ambiguous. Never guess a role for an
   image when more than one candidate plausibly fits — checking for an existing
-  `prompts/keyframe-<role>.txt` description is not the same as confirming which file
+  `prompts/keyframe-beat-<n>.txt` description is not the same as confirming which file
   fills that role.
-- Rename accepted images to `first`/`last`/`ref-N` plus their real extension, only
-  after the mapping is confirmed.
-- Review the resulting set together for subject, palette, light, and framing
-  coherence before the keyframes gate.
+- Probe Pencil once with `get_editor_state`. If unavailable, say so and fall back to
+  numeric `values.json` overlay editing; never claim Pencil review occurred.
+- When Pencil is available, create one canvas per beat with the still as background
+  and title/body/stats/CTA as editable nodes. Iterate through screenshots with the
+  user. Persist approved copy, `position`, normalized `at` ranges, and `hold` flags in
+  `values.json` before asking for the `storyboard` gate go-ahead.
 
-## Step 3: Video
+## Step 3: Stills preview (no video-generation cost)
 
-- Write `prompts/video.txt` with the exact Flow mode and the active keyframe
-  references.
-- Require one continuous shot, slow constant motion, 6-8 seconds, no cuts, no text, no
-  watermark.
-- Manual mode: show one video handoff card, then end the turn.
-- On return, accept mp4/mov; ask when multiple candidate files exist; rename the
-  selected file to `input/video.mp4`.
-- API mode: show the exact paid prompt and wait for approval before making the call.
-- Fall back to the same manual handoff after any API failure — never silently retry
-  with a different prompt or substitute a placeholder.
-- Validate the canonical file with `validate-media.mjs`.
-- Require the user to actually watch it and approve; a passing validator report is not
-  a substitute for that approval.
+- Run `stills-to-frames.mjs`, scaffold the frames-mode site, and review the accepted
+  stills with live overlays. Still acquisition obeys the ledger; this conversion adds
+  no video-generation cost, and Free uses user-provided/manual assets only.
+- Offer this result as a shippable No-video endpoint before offering video. Persist the
+  stable beat-frame preview and reviewed overlays, then ask for the `stills-preview`
+  gate go-ahead.
 
-## Step 4: Extract and review
+## Step 4: Video and budget menu
 
-- Run `extract-frames.mjs` with the selected count/width/format/quality.
-- Report count, dimensions, total bytes, budget, and estimated load time on mid-4G.
-- Calculate `holdFrames` for each requested hold and view every held frame plus 2-3
-  spaced samples from the rest of the sequence.
-- When a hold lands on a bad frame, first try nudging the hold's frame range to a
-  nearby frame; only fall back to changing extraction settings or the source video if
-  no nearby frame works.
-- Choose `posterIndex` from a viewed frame.
-- Persist `holds`/`posterIndex` in `values.json` before asking for the extraction
-  go-ahead.
+- Preflight the current session and persist route JSON containing only verified
+  capabilities, availability, and current prices. Never infer provider availability
+  from this table or from a user claim:
 
-## Step 5: Art-direct and scaffold
+  | Route | Cost character |
+  |---|---|
+  | Manual handoff (Flow or user's own tool) | User's plan credits (default) |
+  | Veo / Seedance / Kling API | Current verified per-clip pricing and capability limits |
+  | Higgsfield API | Per-clip, typically pricier |
+  | Shorter/lower-res variant (4-6 s, 720p) | Cheapest paid |
+  | No video - ship the stills site | Free |
 
-- View 2-3 actual extracted frames before proposing any theme.
+- Include Manual and No video only when applicable; include API routes only when they
+  are callable now. Run `plan-generation.mjs routes` against the persisted preflight
+  JSON, inside the ledger's remaining hard budget, and show ranked eligible routes plus
+  every excluded reason. Never rank providers informally.
+- After route selection, write `prompts/video.txt` with one continuous slow shot, no
+  cuts/text/watermark, and only references supported by that route. Unsupported middle
+  beats guide prompt/timing but are not claimed as frame-locked.
+- Manual mode prints the exact video handoff card and ends the turn. For every paid
+  generation or reroll, show the exact prompt/provider/model/maximum quote,
+  remaining-after-call, and expected result; receive approval; reserve before calling;
+  then `settle` the actual cost or mark an interrupted/billing-uncertain call `unknown`.
+  Reconcile unknown calls before retrying. There are no automatic rerolls.
+- At the cap, stop and preserve current work. State the exact additional micros and
+  which visible weakness that purchase is likely to improve; explicitly say quality is
+  not guaranteed and never raise the cap automatically. Offer the current stills site,
+  a cheaper verified route, unused-budget reallocation, or an explicit exact cap raise.
+- For No video, persist `generation.video: false`; only the video gate skips. Otherwise
+  canonicalize the chosen mp4/mov as `input/video.mp4`, validate it, require the user to
+  watch it, and ask for the `video` gate go-ahead.
+
+## Step 5: Derive playback
+
+- After video approval, default to balanced blob-video playback:
+  `node <skill-root>/scripts/reencode-video.mjs <project>/input/video.mp4 <project>/media --gop 8 --crf 23 --width 1600`.
+- Offer `--all-intra` only with its larger-payload and slower-load warning. Frames mode
+  remains available when preferred or when measured video seeking performs poorly.
+- With No video, keep the beat-derived frames from `stills-to-frames`; skip only the
+  video gate and still complete extraction. For video-to-frames fallback, use
+  `extract-frames.mjs`, calculate holds, inspect held/spaced samples, and choose a viewed
+  `posterIndex`.
+- Report the JSON payload summary, dimensions, total bytes, budget, and estimated
+  mid-4G load time. Persist holds/posterIndex for frames mode or the `media/` re-encode
+  report for video mode before asking for the `extraction` gate go-ahead.
+
+## Step 6: Art-direct and scaffold
+
+- View 2-3 actual beat frames, or the video poster plus representative approved beats,
+  before proposing any theme.
 - Derive `bg`, `text`, `accent`, `surface`, `radius`, and the display/body font stacks
   from what is actually in those frames — not from the brand name alone.
 - Persist `theme` in `values.json` before asking for the theme go-ahead.
@@ -148,22 +199,24 @@ full artifact dump) — they are never skipped and never auto-approved.
 - After approval, run `scaffold-site.mjs`, passing `--force` only when replacing an
   existing `site/` directory.
 
-## Step 6: Preview and revise
+## Step 7: Preview and revise
 
 - Serve the site through a static server (fetching `config.json` does not work
   reliably from a `file://` URL).
-- Ask the user to check scroll smoothness, overlay timing, holds, mobile layout,
-  reduced motion, and a Slow 4G reload.
+- Ask the user to check scroll smoothness, overlay timing, holds, reduced motion, and a
+  Slow 4G reload. On mobile, use the same stills/video and verify no horizontal
+  overflow, safe-area padding, readable overlays, touch-sized CTAs, coarse-pointer seek
+  tuning, iOS first-gesture priming, and height-only resize stability. Never add a
+  portrait-generation route.
 - Route any rejection to the cheapest layer that can fix it, in this order: theme;
-  copy/stops/holds; payload (re-extract at a different count/width/format); video
-  (only when the shot itself is wrong). Never regenerate the video to fix a theme or
-  copy complaint.
-- Re-run `scaffold-site.mjs` after any values-only change; re-run
-  `extract-frames.mjs` then `scaffold-site.mjs --force` after a payload change.
+  copy/stops/holds; playback payload (re-encode video or re-derive frames); video only
+  when the shot itself is wrong. Never regenerate video to fix theme or copy.
+- Re-run `scaffold-site.mjs` after values-only changes. After payload changes, rerun the
+  selected derivation command and then `scaffold-site.mjs --force`.
 - Ask for the preview go-ahead only after the user has actually checked the browser
   preview, never before.
 
-## Step 7: Deploy instructions
+## Step 8: Deploy instructions
 
 - Provide paste-ready Vercel, Netlify, and GitHub Pages instructions for the `site/`
   directory.
@@ -214,6 +267,11 @@ credits or cost directly, so cost is simply not mentioned as a skill-side concer
 ~~~text
 node <skill-root>/scripts/status.mjs <project> --json
 node <skill-root>/scripts/validate-media.mjs <file> --json
+node <skill-root>/scripts/plan-generation.mjs beats --claims 4 --sections 5
+node <skill-root>/scripts/plan-generation.mjs routes <routes.json> --budget-micros N --preset balanced --duration 8 --resolution 720p
+node <skill-root>/scripts/budget.mjs <project> status
+node <skill-root>/scripts/stills-to-frames.mjs <project> --width 1600 --quality 80
+node <skill-root>/scripts/reencode-video.mjs <project>/input/video.mp4 <project>/media --crf 23 --width 1600
 node <skill-root>/scripts/extract-frames.mjs <video> <project>/frames --count N --width W --format webp --quality Q
 node <skill-root>/scripts/scaffold-site.mjs <project> --config <project>/values.json [--force]
 node <skill-root>/scripts/status.mjs <project> --approve <gate>
@@ -245,3 +303,14 @@ node <skill-root>/scripts/status.mjs <project> --approve <gate>
 - Starting a preview-rejection fix at the video layer instead of the cheapest layer
   (theme, then copy/stops/holds, then payload, then video) that could plausibly fix
   the complaint.
+- Treating an available video provider as permission to skip the adaptive storyboard
+  or the shippable stills preview. Provider availability changes the Step 4 menu, not
+  the seven-gate order.
+- Ranking remembered provider names/prices instead of preflighting runtime route JSON
+  and running `plan-generation.mjs routes` against the remaining ledger budget.
+- Starting a paid call after conversational approval but before durable reservation,
+  or retrying an `unknown` call before reconciliation.
+- Raising the cap automatically or promising that extra spend will improve quality;
+  state the exact shortfall and likely targeted improvement without a guarantee.
+- Generating separate portrait media instead of fixing the same-media responsive
+  layout and seek behavior.
