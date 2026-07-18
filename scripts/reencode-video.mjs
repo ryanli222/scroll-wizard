@@ -45,6 +45,14 @@ function boundedInteger(value, name, minimum, maximum) {
   return parsed;
 }
 
+function boundedEvenInteger(value, name, minimum, maximum) {
+  const parsed = boundedInteger(value, name, minimum, maximum);
+  if (parsed % 2 !== 0) {
+    throw new Error(`${name} must be an even integer from ${minimum} to ${maximum}.`);
+  }
+  return parsed;
+}
+
 function boundedNumber(value, name, minimum, maximum) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < minimum || parsed > maximum) {
@@ -82,7 +90,7 @@ export function parseReencodeArgs(argv) {
     input: positional[0],
     outDir: positional[1],
     crf: boundedInteger(values.get('--crf') ?? '23', 'crf', 10, 40),
-    width: boundedInteger(values.get('--width') ?? '1600', 'width', 16, 8192),
+    width: boundedEvenInteger(values.get('--width') ?? '1600', 'width', 16, 8192),
     gop: hasFlag(argv, '--all-intra')
       ? 1
       : boundedInteger(values.get('--gop') ?? '8', 'gop', 1, 120),

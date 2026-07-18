@@ -183,6 +183,21 @@ describe('reencode CLI', () => {
     expect(runner).not.toHaveBeenCalled();
   });
 
+  it('rejects an odd output width before invoking tools', async () => {
+    const root = await temporaryRoot();
+    const input = join(root, 'input.mp4');
+    await writeFile(input, 'video');
+    const io = fakeIo();
+    const runner = vi.fn();
+
+    expect(await main([
+      input, join(root, 'media'), '--width', '17',
+    ], io, runner)).toBe(1);
+
+    expect(io.error.mock.calls.flat().join('\n')).toMatch(/width.*even/i);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['ffprobe failure', { failProbe: true }, /Re-encode failed: bad probe/],
     ['ffmpeg failure', { failFfmpeg: true }, /Re-encode failed: poster failed/],
