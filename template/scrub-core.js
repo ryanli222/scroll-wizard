@@ -28,6 +28,23 @@ export function progressToFrame(progress, frameCount) {
   return clamp(Math.round(clamp(progress, 0, 1) * (count - 1)), 0, count - 1);
 }
 
+export function lingerEase(x, linger) {
+  const p = clamp(Number.isFinite(x) ? x : 0, 0, 1);
+  const strength = clamp(Number.isFinite(linger) ? linger : 0, 0, 1);
+  const c = p - 0.5;
+  return (1 - strength) * p + strength * (4 * c * c * c + 0.5);
+}
+
+export function progressToTime(progress, duration, margin = 0.05) {
+  if (!Number.isFinite(duration) || duration <= 0) return 0;
+  const end = Math.max(0, duration - margin);
+  return clamp(Number.isFinite(progress) ? progress : 0, 0, 1) * end;
+}
+
+export function selectScrubMode(config) {
+  return config?.scrub?.mode ?? (config?.video ? 'video' : 'frames');
+}
+
 export function smooth(current, target, k, dt) {
   if (![current, target, k, dt].every(Number.isFinite) || k <= 0 || dt <= 0) {
     return current;
@@ -207,11 +224,11 @@ function safeHref(value) {
   }
 }
 
-function safeFramePath(value) {
+function safeAssetPath(value, prefix) {
   if (typeof value !== 'string' || hasUnsafePathSyntax(value, true)) return false;
   const variants = decodedVariants(value);
   const decoded = variants[variants.length - 1];
-  if (!value.startsWith('frames/') || !decoded.startsWith('frames/')
+  if (!value.startsWith(prefix) || !decoded.startsWith(prefix)
       || decoded.includes('//')) return false;
   try {
     const resolved = new URL(decoded, trustedOrigin);
@@ -223,6 +240,14 @@ function safeFramePath(value) {
   } catch {
     return false;
   }
+}
+
+function safeFramePath(value) {
+  return safeAssetPath(value, 'frames/');
+}
+
+function safeMediaPath(value) {
+  return safeAssetPath(value, 'media/') && /\.(mp4|webm|webp|jpg|png)$/i.test(value);
 }
 
 const issue = (code, path, message) => ({ code, path, message });
@@ -265,28 +290,51 @@ export function validateConfig(config) {
     addError('contrast.cta', 'theme.surface', 'CTA text/surface contrast must be at least 4.5:1.');
   }
 
-  const frames = config.frames ?? {};
-  if (!Number.isInteger(frames.count) || frames.count < 1 || frames.count > 9999) {
-    addError('frames.count', 'frames.count', 'Frame count must be an integer from 1 to 9999.');
-  } else if (frames.count < 24 || frames.count > 400) {
-    warnings.push(issue('frames.budget', 'frames.count', 'Recommended frame count is 24 to 400.'));
-  }
-  if (typeof frames.pattern !== 'string' || !/\{index:\d+\}/.test(frames.pattern)) {
-    addError('frames.pattern', 'frames.pattern', 'Frame pattern requires an {index:N} token.');
-  } else if (!safeFramePath(frames.pattern)) {
-    addError('frames.pattern', 'frames.pattern',
-      'Frame pattern must be a normalized path under frames/.');
-  }
-  if (typeof frames.poster !== 'string' || !safeFramePath(frames.poster)) {
-    addError('frames.poster', 'frames.poster', 'Poster must be a path under frames/.');
-  }
-
   if (!Number.isFinite(config.scrub?.heightVh) || config.scrub.heightVh <= 100) {
     addError('scrub.height', 'scrub.heightVh', 'Scrub height must exceed 100vh.');
   }
   if (!Number.isFinite(config.scrub?.smoothing)
       || config.scrub.smoothing <= 0 || config.scrub.smoothing >= 1) {
     addError('scrub.smoothing', 'scrub.smoothing', 'Smoothing must be in (0, 1).');
+  }
+
+  const mode = selectScrubMode(config);
+  if (!['frames', 'video'].includes(mode)) {
+    addError('scrub.mode', 'scrub.mode', 'Mode must be "frames" or "video".');
+  }
+  const linger = config.scrub?.linger;
+  if (linger !== undefined && !(Number.isFinite(linger) && linger >= 0 && linger < 1)) {
+    addError('scrub.linger', 'scrub.linger', 'Linger must be a number in [0, 1).');
+  }
+  if (mode === 'video') {
+    const video = config.video ?? {};
+    if (!safeMediaPath(video.src)) {
+      addError('video.src', 'video.src', 'Video src must be a normalized path under media/.');
+    }
+    if (!safeMediaPath(video.poster)) {
+      addError('video.poster', 'video.poster', 'Video poster must be a normalized path under media/.');
+    }
+    if (!Number.isFinite(video.duration) || video.duration <= 0) {
+      addError('video.duration', 'video.duration', 'Video duration must be a positive number of seconds.');
+    }
+  }
+
+  if (mode !== 'video') {
+    const frames = config.frames ?? {};
+    if (!Number.isInteger(frames.count) || frames.count < 1 || frames.count > 9999) {
+      addError('frames.count', 'frames.count', 'Frame count must be an integer from 1 to 9999.');
+    } else if (frames.count < 24 || frames.count > 400) {
+      warnings.push(issue('frames.budget', 'frames.count', 'Recommended frame count is 24 to 400.'));
+    }
+    if (typeof frames.pattern !== 'string' || !/\{index:\d+\}/.test(frames.pattern)) {
+      addError('frames.pattern', 'frames.pattern', 'Frame pattern requires an {index:N} token.');
+    } else if (!safeFramePath(frames.pattern)) {
+      addError('frames.pattern', 'frames.pattern',
+        'Frame pattern must be a normalized path under frames/.');
+    }
+    if (typeof frames.poster !== 'string' || !safeFramePath(frames.poster)) {
+      addError('frames.poster', 'frames.poster', 'Poster must be a path under frames/.');
+    }
   }
 
   if (config.overlays !== undefined && !Array.isArray(config.overlays)) {

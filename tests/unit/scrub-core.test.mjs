@@ -8,10 +8,13 @@ import {
   decodeWindow,
   frameFilename,
   holdFrames,
+  lingerEase,
   overlayOpacity,
   progressToFrame,
+  progressToTime,
   recommendHeightVh,
   scrollProgress,
+  selectScrubMode,
   smooth,
   validateConfig,
 } from '../../template/scrub-core.js';
@@ -295,5 +298,85 @@ describe('colors and config validation', () => {
         message: 'Overlay must be an object.',
       },
     ]);
+  });
+});
+
+describe('lingerEase', () => {
+  it('keeps endpoints fixed', () => {
+    expect(lingerEase(0, 0.7)).toBeCloseTo(0);
+    expect(lingerEase(1, 0.7)).toBeCloseTo(1);
+  });
+  it('is identity when linger is 0', () => {
+    expect(lingerEase(0.3, 0)).toBeCloseTo(0.3);
+  });
+  it('flattens the middle when linger is high', () => {
+    // slope near 0.5 shrinks: f(0.55)-f(0.45) < 0.1 for L=1
+    expect(lingerEase(0.55, 1) - lingerEase(0.45, 1)).toBeLessThan(0.1);
+  });
+  it('clamps junk input', () => {
+    expect(lingerEase(NaN, 0.5)).toBe(0);
+    expect(lingerEase(2, NaN)).toBe(1);
+  });
+});
+
+describe('progressToTime', () => {
+  it('maps progress across duration minus margin', () => {
+    expect(progressToTime(0, 8)).toBe(0);
+    expect(progressToTime(1, 8)).toBeCloseTo(7.95);
+    expect(progressToTime(0.5, 8, 0)).toBeCloseTo(4);
+  });
+  it('returns 0 for invalid duration', () => {
+    expect(progressToTime(0.5, 0)).toBe(0);
+    expect(progressToTime(0.5, NaN)).toBe(0);
+  });
+});
+
+describe('validateConfig v2', () => {
+  const base = () => JSON.parse(JSON.stringify({
+    brand: { name: 'X' },
+    theme: {
+      bg: '#050607', text: '#f7f8f2', accent: '#dfff57',
+      surface: 'rgba(5,6,7,0.78)', radius: 12,
+    },
+    scrub: { heightVh: 400, smoothing: 0.12 },
+    frames: { count: 24, pattern: 'frames/frame-{index:4}.webp', poster: 'frames/frame-0001.webp' },
+  }));
+
+  it('accepts video mode without a frames block', () => {
+    const config = base();
+    delete config.frames;
+    config.scrub.mode = 'video';
+    config.video = { src: 'media/video.mp4', poster: 'media/poster.webp', duration: 8 };
+    expect(validateConfig(config).errors).toEqual([]);
+  });
+  it('rejects unknown mode and out-of-range linger', () => {
+    const config = base();
+    config.scrub.mode = 'dvd';
+    config.scrub.linger = 1;
+    const codes = validateConfig(config).errors.map((e) => e.code);
+    expect(codes).toContain('scrub.mode');
+    expect(codes).toContain('scrub.linger');
+  });
+  it('rejects unsafe video paths and bad duration', () => {
+    const config = base();
+    delete config.frames;
+    config.scrub.mode = 'video';
+    config.video = { src: 'media/../evil.mp4', poster: 'frames/p.webp', duration: 0 };
+    const codes = validateConfig(config).errors.map((e) => e.code);
+    expect(codes).toContain('video.src');
+    expect(codes).toContain('video.poster');
+    expect(codes).toContain('video.duration');
+  });
+  it('still requires frames in frames mode', () => {
+    const config = base();
+    delete config.frames;
+    expect(validateConfig(config).errors.length).toBeGreaterThan(0);
+  });
+  it('defaults to video when a video block exists', () => {
+    const config = base();
+    delete config.frames;
+    config.video = { src: 'media/video.mp4', poster: 'media/poster.webp', duration: 8 };
+    expect(selectScrubMode(config)).toBe('video');
+    expect(validateConfig(config).errors).toEqual([]);
   });
 });
