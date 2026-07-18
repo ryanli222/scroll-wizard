@@ -97,19 +97,21 @@ export async function main(
       new Set(['--first-last']),
     );
 
-    const requirements = {
-      budgetMicros: integerFlag(argv, '--budget-micros'),
-      duration: numericFlag(argv, '--duration'),
-      firstLast: argv.includes('--first-last'),
-      referenceCount: optionalIntegerFlag(argv, '--references', 0),
-      resolution: valueAfter(argv, '--resolution'),
-    };
     const preset = valueAfter(argv, '--preset');
     if (!PRESETS.has(preset)) {
       throw new Error(
         'preset must be free, cheapest, balanced, or quality-first.',
       );
     }
+    const requestedBudgetMicros = integerFlag(argv, '--budget-micros');
+    const requirements = {
+      budgetMicros: preset === 'free' ? 0 : requestedBudgetMicros,
+      duration: numericFlag(argv, '--duration'),
+      firstLast: argv.includes('--first-last'),
+      preset,
+      referenceCount: optionalIntegerFlag(argv, '--references', 0),
+      resolution: valueAfter(argv, '--resolution'),
+    };
 
     let routes;
     try {

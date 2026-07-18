@@ -117,6 +117,46 @@ describe('provider planning', () => {
     ]);
   });
 
+  it('excludes every paid route from the free preset despite a nonzero budget', () => {
+    const result = filterProviderRoutes([
+      {
+        available: true,
+        costMicros: 1,
+        durations: [8],
+        firstFrame: true,
+        id: 'paid-video',
+        lastFrame: true,
+        maxReferences: 2,
+        resolutions: ['720p'],
+      },
+      {
+        available: true,
+        costMicros: 1,
+        id: 'paid-manual',
+        noVideo: true,
+      },
+      {
+        available: true,
+        costMicros: 0,
+        id: 'free-manual',
+        noVideo: true,
+      },
+    ], {
+      budgetMicros: 500000,
+      duration: 8,
+      firstLast: true,
+      preset: 'free',
+      referenceCount: 2,
+      resolution: '720p',
+    });
+
+    expect(result.eligible.map((route) => route.id)).toEqual(['free-manual']);
+    expect(result.excluded).toEqual([
+      { id: 'paid-video', reasons: ['paid-on-free'] },
+      { id: 'paid-manual', reasons: ['paid-on-free'] },
+    ]);
+  });
+
   it('ranks cheapest by cost and quality-first by quality', () => {
     expect(rankProviderRoutes(routes.slice(0, 3), 'cheapest')[0].id).toBe('none');
     expect(rankProviderRoutes(routes.slice(0, 3), 'quality-first')[0].id)

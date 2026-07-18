@@ -150,6 +150,35 @@ describe('plan-generation main', () => {
       .toBe('manual-runtime-route');
   });
 
+  it('never recommends a paid route for free despite a nonzero budget', async () => {
+    const io = fakeIo();
+    const runner = vi.fn().mockResolvedValue(JSON.stringify([
+      {
+        available: true,
+        costMicros: 1,
+        durations: [8],
+        firstFrame: true,
+        id: 'paid-runtime-route',
+        lastFrame: true,
+        maxReferences: 2,
+        quality: 3,
+        resolutions: ['720p'],
+        speed: 3,
+      },
+    ]));
+    const argv = routeArgs('runtime-routes.json').map((value) => (
+      value === 'balanced' ? 'free' : value
+    ));
+
+    expect(await main(argv, io, runner)).toBe(0);
+
+    expect(JSON.parse(io.log.mock.calls[0][0])).toEqual({
+      eligible: [],
+      excluded: [{ id: 'paid-runtime-route', reasons: ['paid-on-free'] }],
+      recommended: null,
+    });
+  });
+
   it('returns 2 for malformed runtime JSON', async () => {
     const root = await temporaryRoot();
     const routesFile = join(root, 'routes.json');

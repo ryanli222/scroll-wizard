@@ -36,7 +36,9 @@ export function estimateRouteCost(rateMicrosPerSecond, durationSeconds) {
 function exclusionReasons(route, requirements) {
   const reasons = [];
   if (!route.available) reasons.push('unavailable');
-  if (!route.noVideo && route.costMicros > requirements.budgetMicros) {
+  if (requirements.preset === 'free' && route.costMicros > 0) {
+    reasons.push('paid-on-free');
+  } else if (!route.noVideo && route.costMicros > requirements.budgetMicros) {
     reasons.push('over-budget');
   }
   if (
