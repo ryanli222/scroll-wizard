@@ -25,7 +25,11 @@ import {
   MID_4G_BYTES_PER_SECOND,
   REQUEST_OVERHEAD_SECONDS,
 } from './extract-frames.mjs';
-import { runFfprobe, videoVerdict } from './validate-media.mjs';
+import {
+  imageVerdict,
+  runFfprobe,
+  videoVerdict,
+} from './validate-media.mjs';
 
 const execFileAsync = promisify(execFile);
 const VALUE_FLAGS = new Set(['--crf', '--width', '--gop', '--poster-at']);
@@ -164,6 +168,10 @@ export async function main(argv = process.argv.slice(2), io = console, runner = 
     const outputVerdict = videoVerdict(await runFfprobe(videoOut, runner));
     if (!outputVerdict.valid) {
       throw new Error('Re-encoded video failed validation: ' + outputVerdict.errors[0]);
+    }
+    const posterVerdict = imageVerdict(await runFfprobe(posterOut, runner));
+    if (!posterVerdict.valid) {
+      throw new Error('Poster failed validation: ' + posterVerdict.errors[0]);
     }
     const { duration, width, height } = outputVerdict.metadata;
     await writeJsonAtomic(join(prepared, 'media.json'), {

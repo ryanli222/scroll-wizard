@@ -57,13 +57,34 @@ const outputProbe = {
   format: { duration: '8', format_name: 'mov,mp4,m4a,3gp,3g2,mj2' },
 };
 
-function fakeReencodeRunner({ input, failProbe = false, failFfmpeg = false } = {}) {
+const posterProbe = {
+  streams: [{
+    codec_type: 'video',
+    codec_name: 'webp',
+    width: 1280,
+    height: 720,
+    avg_frame_rate: '0/0',
+    nb_frames: '1',
+  }],
+  format: { format_name: 'image2' },
+};
+
+function fakeReencodeRunner({
+  input,
+  failProbe = false,
+  failFfmpeg = false,
+  corruptPoster = false,
+} = {}) {
   let ffmpegCalls = 0;
   return vi.fn(async (command, args) => {
     if (command === 'ffprobe') {
       if (failProbe) throw Object.assign(new Error('probe failed'), { stderr: 'bad probe\nmore' });
+      const file = args.at(-1);
+      if (file.endsWith('poster.webp')) {
+        return { stdout: JSON.stringify(corruptPoster ? { streams: [], format: {} } : posterProbe) };
+      }
       return {
-        stdout: JSON.stringify(args.at(-1) === input ? inputProbe : outputProbe),
+        stdout: JSON.stringify(file === input ? inputProbe : outputProbe),
       };
     }
     if (command !== 'ffmpeg') throw new Error('unexpected command');
@@ -224,6 +245,30 @@ describe('reencode CLI', () => {
     )).toBe(2);
 
     expect(await readFile(join(outDir, 'video.mp4'))).toEqual(beforeVideo);
+    expect(await readFile(join(outDir, 'nested', 'keep.bin'))).toEqual(beforeNested);
+    expect(await readdir(root)).toEqual(['input.mp4', 'media']);
+  });
+
+  it('rejects a corrupt staged poster and preserves forced output byte-for-byte', async () => {
+    const root = await temporaryRoot();
+    const input = join(root, 'input.mp4');
+    const outDir = join(root, 'media');
+    await writeFile(input, 'video');
+    await mkdir(join(outDir, 'nested'), { recursive: true });
+    await writeFile(join(outDir, 'poster.webp'), Buffer.from([0, 1, 2, 255]));
+    await writeFile(join(outDir, 'nested', 'keep.bin'), Buffer.from([9, 8, 7]));
+    const beforePoster = await readFile(join(outDir, 'poster.webp'));
+    const beforeNested = await readFile(join(outDir, 'nested', 'keep.bin'));
+    const io = fakeIo();
+
+    expect(await main(
+      [input, outDir, '--force'],
+      io,
+      fakeReencodeRunner({ input, corruptPoster: true }),
+    )).toBe(2);
+
+    expect(io.error.mock.calls.at(-1)[0]).toMatch(/poster.*validation/i);
+    expect(await readFile(join(outDir, 'poster.webp'))).toEqual(beforePoster);
     expect(await readFile(join(outDir, 'nested', 'keep.bin'))).toEqual(beforeNested);
     expect(await readdir(root)).toEqual(['input.mp4', 'media']);
   });
