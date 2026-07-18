@@ -9,6 +9,7 @@
   "bin": {
     "scroll-wizard-validate": "scripts/validate-media.mjs",
     "scroll-wizard-extract": "scripts/extract-frames.mjs",
+    "scroll-wizard-plan-generation": "scripts/plan-generation.mjs",
     "scroll-wizard-scaffold": "scripts/scaffold-site.mjs",
     "scroll-wizard-status": "scripts/status.mjs"
   },
