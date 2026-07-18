@@ -37,7 +37,8 @@ export function lingerEase(x, linger) {
 
 export function progressToTime(progress, duration, margin = 0.05) {
   if (!Number.isFinite(duration) || duration <= 0) return 0;
-  const end = Math.max(0, duration - margin);
+  const safeMargin = Number.isFinite(margin) && margin >= 0 ? margin : 0;
+  const end = Math.max(0, duration - safeMargin);
   return clamp(Number.isFinite(progress) ? progress : 0, 0, 1) * end;
 }
 
@@ -246,8 +247,12 @@ function safeFramePath(value) {
   return safeAssetPath(value, 'frames/');
 }
 
-function safeMediaPath(value) {
-  return safeAssetPath(value, 'media/') && /\.(mp4|webm|webp|jpg|png)$/i.test(value);
+function safeVideoPath(value) {
+  return safeAssetPath(value, 'media/') && /\.(mp4|webm)$/i.test(value);
+}
+
+function safePosterPath(value) {
+  return safeAssetPath(value, 'media/') && /\.(webp|jpe?g|png)$/i.test(value);
 }
 
 const issue = (code, path, message) => ({ code, path, message });
@@ -308,10 +313,10 @@ export function validateConfig(config) {
   }
   if (mode === 'video') {
     const video = config.video ?? {};
-    if (!safeMediaPath(video.src)) {
+    if (!safeVideoPath(video.src)) {
       addError('video.src', 'video.src', 'Video src must be a normalized path under media/.');
     }
-    if (!safeMediaPath(video.poster)) {
+    if (!safePosterPath(video.poster)) {
       addError('video.poster', 'video.poster', 'Video poster must be a normalized path under media/.');
     }
     if (!Number.isFinite(video.duration) || video.duration <= 0) {

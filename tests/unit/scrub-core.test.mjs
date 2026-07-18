@@ -329,6 +329,10 @@ describe('progressToTime', () => {
     expect(progressToTime(0.5, 0)).toBe(0);
     expect(progressToTime(0.5, NaN)).toBe(0);
   });
+  it('treats invalid margin as zero', () => {
+    expect(progressToTime(0.5, 8, NaN)).toBeCloseTo(4);
+    expect(progressToTime(0.5, 8, -1)).toBeCloseTo(4);
+  });
 });
 
 describe('validateConfig v2', () => {
@@ -366,6 +370,15 @@ describe('validateConfig v2', () => {
     expect(codes).toContain('video.src');
     expect(codes).toContain('video.poster');
     expect(codes).toContain('video.duration');
+  });
+  it('rejects cross-type video and poster extensions', () => {
+    const config = base();
+    delete config.frames;
+    config.scrub.mode = 'video';
+    config.video = { src: 'media/video.webp', poster: 'media/poster.mp4', duration: 8 };
+    const codes = validateConfig(config).errors.map((e) => e.code);
+    expect(codes).toContain('video.src');
+    expect(codes).toContain('video.poster');
   });
   it('still requires frames in frames mode', () => {
     const config = base();
