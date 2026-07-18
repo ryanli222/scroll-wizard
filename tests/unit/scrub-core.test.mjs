@@ -392,4 +392,23 @@ describe('validateConfig v2', () => {
     expect(selectScrubMode(config)).toBe('video');
     expect(validateConfig(config).errors).toEqual([]);
   });
+  it('defaults to frames when an implicit video block is invalid', () => {
+    const invalidVideos = [
+      {},
+      [],
+      { src: 'media/video.webp', poster: 'media/poster.webp', duration: 8 },
+      { src: 'media/video.mp4', poster: 'media/poster.mp4', duration: 8 },
+      { src: 'media/video.mp4', poster: 'media/poster.webp', duration: 0 },
+    ];
+
+    invalidVideos.forEach((video) => {
+      expect(selectScrubMode({ ...base(), video }), JSON.stringify(video)).toBe('frames');
+    });
+  });
+  it('keeps explicit mode precedence over video validity', () => {
+    const config = base();
+    config.scrub.mode = 'video';
+    config.video = {};
+    expect(selectScrubMode(config)).toBe('video');
+  });
 });

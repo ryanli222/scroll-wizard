@@ -43,7 +43,15 @@ export function progressToTime(progress, duration, margin = 0.05) {
 }
 
 export function selectScrubMode(config) {
-  return config?.scrub?.mode ?? (config?.video ? 'video' : 'frames');
+  if (config?.scrub?.mode !== undefined) return config.scrub.mode;
+  const video = config?.video;
+  return video && typeof video === 'object' && !Array.isArray(video)
+    && safeVideoPath(video.src)
+    && safePosterPath(video.poster)
+    && Number.isFinite(video.duration)
+    && video.duration > 0
+    ? 'video'
+    : 'frames';
 }
 
 export function smooth(current, target, k, dt) {
