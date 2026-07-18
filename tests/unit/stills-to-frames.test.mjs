@@ -5,6 +5,7 @@ import {
   readdir,
   rename,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -110,6 +111,39 @@ describe('planBeats', () => {
 });
 
 describe('stills-to-frames main', () => {
+  it('accepts a real input/keyframes directory', async () => {
+    const root = await temporaryRoot();
+    await seedBeats(root);
+
+    expect(await main([root], fakeIo(), conversionRunner())).toBe(0);
+    expect(await readdir(join(root, 'frames'))).toEqual([
+      'frame-0001.webp',
+      'frame-0002.webp',
+    ]);
+  });
+
+  it('rejects a keyframes directory reached through a symlink or Windows junction', async () => {
+    const root = await temporaryRoot();
+    const linkedKeyframes = join(root, 'linked-keyframes');
+    await mkdir(linkedKeyframes);
+    await writeFile(join(linkedKeyframes, 'beat-1.png'), 'beat 1');
+    await writeFile(join(linkedKeyframes, 'beat-2.png'), 'beat 2');
+    await mkdir(join(root, 'input'));
+    await symlink(
+      linkedKeyframes,
+      join(root, 'input', 'keyframes'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    const io = fakeIo();
+    const runner = conversionRunner();
+
+    expect(await main([root], io, runner)).toBe(1);
+    expect(runner).not.toHaveBeenCalled();
+    expect(io.error.mock.calls.flat().join('\n')).toMatch(
+      /input\/keyframes.*real.*directory.*(?:symlink|junction)/i,
+    );
+  });
+
   it('returns 1 when input/keyframes is missing', async () => {
     const root = await temporaryRoot();
     const io = fakeIo();

@@ -2,14 +2,13 @@
 
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { lstat, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import { isDirect } from './lib/cli.mjs';
 import {
   listFilesRecursive,
-  pathExists,
   replaceDirectory,
 } from './lib/files.mjs';
 import { summarizeFrames } from './extract-frames.mjs';
@@ -142,8 +141,19 @@ export async function main(
   let summary;
 
   try {
-    if (!await pathExists(keyframesDir)) {
+    let keyframesDetails;
+    try {
+      keyframesDetails = await lstat(keyframesDir);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
       io.error('No input/keyframes directory in ' + options.projectDir);
+      return 1;
+    }
+    if (!keyframesDetails.isDirectory() || keyframesDetails.isSymbolicLink()) {
+      io.error(
+        'input/keyframes must be a real directory, not a symlink or junction: '
+        + keyframesDir,
+      );
       return 1;
     }
     const names = (await readdir(keyframesDir, { withFileTypes: true }))
