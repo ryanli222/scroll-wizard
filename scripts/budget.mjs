@@ -213,17 +213,74 @@ function validateOptions(argv, flags) {
   }
 }
 
+function invalidLedger(message) {
+  return Object.assign(
+    new Error('budget.json has an invalid or unsupported shape: ' + message),
+    { code: 'EBUDGET' },
+  );
+}
+
+function validatePersistedLedger(ledger) {
+  try {
+    if (
+      ledger?.version !== 1
+      || !Array.isArray(ledger.transactions)
+      || !PRESETS.has(ledger.preset)
+      || !ledger.allocations
+      || Array.isArray(ledger.allocations)
+      || typeof ledger.allocations !== 'object'
+    ) {
+      throw new Error('unsupported top-level fields');
+    }
+    money(ledger.capMicros, 'capMicros');
+    nonEmpty(ledger.currency, 'currency');
+    let allocationTotal = 0;
+    for (const [name, value] of Object.entries(ledger.allocations)) {
+      allocationTotal = addMoney(
+        allocationTotal,
+        money(value, 'allocations.' + name),
+        'allocation total',
+      );
+    }
+    if (allocationTotal > ledger.capMicros) {
+      throw new Error('allocations exceed the hard cap');
+    }
+    if (ledger.preset === 'free' && (ledger.capMicros !== 0 || allocationTotal !== 0)) {
+      throw new Error('Free cap and allocations must be zero');
+    }
+
+    const ids = new Set();
+    for (const transaction of ledger.transactions) {
+      nonEmpty(transaction?.id, 'transaction id');
+      nonEmpty(transaction?.kind, 'transaction kind');
+      nonEmpty(transaction?.provider, 'transaction provider');
+      nonEmpty(transaction?.model, 'transaction model');
+      money(transaction?.quotedMicros, 'quotedMicros');
+      if (ids.has(transaction.id)) throw new Error('duplicate transaction id');
+      ids.add(transaction.id);
+      if (!['reserved', 'unknown', 'settled'].includes(transaction.status)) {
+        throw new Error('unsupported transaction status');
+      }
+      if (transaction.status === 'settled') {
+        money(transaction.actualMicros, 'actualMicros');
+        if (transaction.actualMicros > transaction.quotedMicros) {
+          throw new Error('settled actualMicros exceeds quotedMicros');
+        }
+      }
+    }
+    if (budgetTotals(ledger).remainingMicros < 0) {
+      throw new Error('committed total exceeds the hard cap');
+    }
+  } catch (error) {
+    if (error?.code === 'EBUDGET') throw error;
+    throw invalidLedger(String(error?.message ?? error));
+  }
+  return ledger;
+}
+
 async function readLedger(path, reader) {
   const ledger = JSON.parse(await reader(path, 'utf8'));
-  if (
-    ledger?.version !== 1
-    || !Array.isArray(ledger.transactions)
-    || !PRESETS.has(ledger.preset)
-  ) {
-    throw new Error('budget.json has an unsupported shape.');
-  }
-  budgetTotals(ledger);
-  return ledger;
+  return validatePersistedLedger(ledger);
 }
 
 async function acquireLock(lockPath) {

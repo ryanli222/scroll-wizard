@@ -3,6 +3,7 @@ import {
   readFile,
   readdir,
   rm,
+  writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -269,5 +270,58 @@ describe('budget main', () => {
     const ioIo = fakeIo();
     expect(await main([root, 'status'], ioIo)).toBe(2);
     expect(ioIo.error.mock.calls.flat().join('\n')).toMatch(/ENOENT|no such file/i);
+  });
+
+  it.each([
+    [
+      'an unsupported transaction status during status',
+      {
+        actualMicros: undefined,
+        status: 'approved',
+      },
+      (root) => [root, 'status'],
+    ],
+    [
+      'a settled transaction without actualMicros before reserve',
+      {
+        actualMicros: undefined,
+        status: 'settled',
+      },
+      (root) => reserveArgs(root, 'video-2', '100000'),
+    ],
+  ])('rejects persisted %s without changing or locking the ledger', async (
+    _description,
+    transactionOverrides,
+    argvFor,
+  ) => {
+    const root = await temporaryRoot();
+    const path = join(root, 'budget.json');
+    const transaction = {
+      id: 'video-1',
+      kind: 'video',
+      model: 'model-v1',
+      provider: 'verified',
+      quotedMicros: 100000,
+      status: 'reserved',
+      timestamp: '2026-07-18T00:00:00.000Z',
+      ...transactionOverrides,
+    };
+    if (transaction.actualMicros === undefined) delete transaction.actualMicros;
+    const malformed = JSON.stringify({
+      allocations: { rerollMicros: 0, stillMicros: 0, videoMicros: 100000 },
+      capMicros: 500000,
+      currency: 'USD',
+      preset: 'balanced',
+      transactions: [transaction],
+      version: 1,
+    }, null, 2) + '\n';
+    await writeFile(path, malformed);
+    const io = fakeIo();
+
+    expect(await main(argvFor(root), io)).toBe(2);
+
+    await expect(readFile(path, 'utf8')).resolves.toBe(malformed);
+    expect(await readdir(root)).toEqual(['budget.json']);
+    expect(io.error.mock.calls.flat().join('\n')).toMatch(/unsupported|invalid/i);
   });
 });
