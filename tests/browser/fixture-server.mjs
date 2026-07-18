@@ -15,17 +15,28 @@ const templateDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 't
 const videoFixtureDir = mkdtempSync(join(tmpdir(), 'scroll-wizard-video-'));
 const videoPath = join(videoFixtureDir, 'video.webm');
 const videoPosterPath = join(videoFixtureDir, 'poster.webp');
+const cleanup = () => rmSync(videoFixtureDir, { recursive: true, force: true });
+process.once('exit', cleanup);
 
-execFileSync('ffmpeg', [
-  '-hide_banner', '-loglevel', 'error', '-y',
-  '-f', 'lavfi', '-i', 'testsrc=duration=2:size=320x180:rate=12',
-  '-c:v', 'libvpx-vp9', '-g', '1', '-crf', '40', '-b:v', '0', videoPath,
-]);
-execFileSync('ffmpeg', [
-  '-hide_banner', '-loglevel', 'error', '-y',
-  '-f', 'lavfi', '-i', 'testsrc=duration=1:size=320x180:rate=1',
-  '-frames:v', '1', videoPosterPath,
-]);
+let videoFixtureStatus = { available: true };
+try {
+  const ffmpeg = process.env.SCROLL_WIZARD_FFMPEG || 'ffmpeg';
+  execFileSync(ffmpeg, [
+    '-hide_banner', '-loglevel', 'error', '-y',
+    '-f', 'lavfi', '-i', 'testsrc=duration=2:size=320x180:rate=12',
+    '-c:v', 'libvpx-vp9', '-g', '1', '-crf', '40', '-b:v', '0', videoPath,
+  ]);
+  execFileSync(ffmpeg, [
+    '-hide_banner', '-loglevel', 'error', '-y',
+    '-f', 'lavfi', '-i', 'testsrc=duration=1:size=320x180:rate=1',
+    '-frames:v', '1', videoPosterPath,
+  ]);
+} catch (error) {
+  videoFixtureStatus = {
+    available: false,
+    reason: 'VP9 fixture unavailable: ' + (error.code || error.message),
+  };
+}
 
 function crc32(buffer) {
   let crc = 0xffffffff;
@@ -105,7 +116,7 @@ const videoConfig = {
   video: {
     src: 'media/video.webm',
     poster: 'media/poster.webp',
-    duration: 2,
+    duration: 9,
   },
 };
 delete videoConfig.frames;
@@ -148,6 +159,12 @@ const framePattern = /^\/frames\/frame-(\d{4})\.webp$/;
 const server = createServer(async (req, res) => {
   const { pathname } = new URL(req.url, 'http://127.0.0.1');
 
+  if (pathname === '/video-fixture-status.json') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(videoFixtureStatus));
+    return;
+  }
+
   if (pathname === '/config.json' || pathname === '/video/config.json') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(pathname.startsWith('/video/') ? videoConfig : config));
@@ -155,12 +172,20 @@ const server = createServer(async (req, res) => {
   }
 
   if (pathname === '/video/media/video.webm') {
+    if (!videoFixtureStatus.available) {
+      res.writeHead(503).end(videoFixtureStatus.reason);
+      return;
+    }
     res.writeHead(200, { 'Content-Type': contentTypes['.webm'] });
     res.end(await readFile(videoPath));
     return;
   }
 
   if (pathname === '/video/media/poster.webp') {
+    if (!videoFixtureStatus.available) {
+      res.writeHead(503).end(videoFixtureStatus.reason);
+      return;
+    }
     res.writeHead(200, { 'Content-Type': contentTypes['.webp'] });
     res.end(await readFile(videoPosterPath));
     return;
@@ -179,9 +204,8 @@ const server = createServer(async (req, res) => {
   await serveStatic(res, pathname);
 });
 
-server.listen(4173, '127.0.0.1', () => {
-  console.log('Fixture server listening on http://127.0.0.1:4173');
+const requestedPort = Number.parseInt(process.env.PORT ?? '4173', 10);
+const port = Number.isInteger(requestedPort) ? requestedPort : 4173;
+server.listen(port, '127.0.0.1', () => {
+  console.log('Fixture server listening on http://127.0.0.1:' + port);
 });
-
-const cleanup = () => rmSync(videoFixtureDir, { recursive: true, force: true });
-process.once('exit', cleanup);

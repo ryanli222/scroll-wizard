@@ -147,6 +147,25 @@ h1, h2, h3 { font-family: var(--display); }
   }
 }
 
+@media (pointer: coarse) and (max-height: 500px) {
+  .overlay {
+    max-height: calc(100vh - 1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding: .75rem 1rem;
+    backdrop-filter: blur(6px);
+  }
+  .overlay--left, .overlay--right {
+    left: max(1rem, env(safe-area-inset-left));
+    right: max(1rem, env(safe-area-inset-right));
+    width: auto;
+  }
+  .overlay__title { font-size: clamp(1.4rem, 4vw, 2rem); }
+  .overlay__body { font-size: .95rem; }
+  .overlay__cta { margin-top: .5rem; padding-block: .55rem; }
+  .scrub__vignette {
+    background: linear-gradient(to right, transparent 50%, color-mix(in srgb, var(--bg) 45%, transparent));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .scrub { height: auto !important; }
   .scrub__sticky { position: relative; height: auto; overflow: visible; }

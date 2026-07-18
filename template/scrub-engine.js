@@ -320,6 +320,9 @@ function drawCover(context, source) {
 
 let store = null;
 let lastDrawnIndex = -1;
+let scrubProgressDebug = 0;
+let seekEpsilonDebug = 0;
+let videoDurationDebug = 0;
 
 if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
   window.__SCROLL_WIZARD_DEBUG__ = {
@@ -327,6 +330,9 @@ if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
     get lastFrame() { return lastDrawnIndex; },
     get failedFrames() { return [...(store?.failed ?? [])]; },
     get videoTime() { return document.getElementById('scrub-video')?.currentTime ?? 0; },
+    get scrubProgress() { return scrubProgressDebug; },
+    get seekEpsilon() { return seekEpsilonDebug; },
+    get videoDuration() { return videoDurationDebug; },
   };
 }
 
@@ -417,18 +423,55 @@ async function loadScrubVideo(config) {
   const response = await fetch(config.video.src);
   if (!response.ok) throw new Error('Video request failed: HTTP ' + response.status);
   const blob = await response.blob();
-  scrubVideo.src = URL.createObjectURL(blob);
-  await new Promise((resolve, reject) => {
-    if (scrubVideo.readyState >= 1) {
-      resolve();
-      return;
-    }
-    scrubVideo.addEventListener('loadedmetadata', resolve, { once: true });
-    scrubVideo.addEventListener('error', () => {
-      reject(new Error('Scrub video failed to load.'));
-    }, { once: true });
-  });
+  const objectUrl = URL.createObjectURL(blob);
+  let revoked = false;
+  const revoke = () => {
+    if (revoked) return;
+    revoked = true;
+    URL.revokeObjectURL(objectUrl);
+  };
+  addEventListener('pagehide', revoke, { once: true });
+  scrubVideo.src = objectUrl;
+  try {
+    await new Promise((resolve, reject) => {
+      const loaded = () => {
+        scrubVideo.removeEventListener('error', failed);
+        resolve();
+      };
+      const failed = () => {
+        scrubVideo.removeEventListener('loadedmetadata', loaded);
+        reject(new Error('Scrub video failed to load.'));
+      };
+      if (scrubVideo.readyState >= 1) {
+        resolve();
+        return;
+      }
+      scrubVideo.addEventListener('loadedmetadata', loaded, { once: true });
+      scrubVideo.addEventListener('error', failed, { once: true });
+    });
+  } catch (error) {
+    revoke();
+    throw error;
+  }
   return scrubVideo;
+}
+
+function installVideoPrime(video) {
+  let primed = false;
+  const cleanup = () => {
+    removeEventListener('pointerdown', prime);
+    removeEventListener('touchstart', prime);
+  };
+  const prime = () => {
+    if (primed) return;
+    primed = true;
+    cleanup();
+    video.play().then(() => video.pause()).catch(() => {});
+  };
+  addEventListener('pointerdown', prime);
+  addEventListener('touchstart', prime, { passive: true });
+  addEventListener('pagehide', cleanup, { once: true });
+  return cleanup;
 }
 
 function runVideoEngine(config, overlayNodes, video) {
@@ -441,12 +484,29 @@ function runVideoEngine(config, overlayNodes, video) {
     ? video.duration
     : config.video.duration;
   const epsilon = matchMedia('(pointer: coarse)').matches ? 0.02 : 0.008;
+  seekEpsilonDebug = epsilon;
+  videoDurationDebug = duration;
 
-  const prime = () => {
-    video.play().then(() => video.pause()).catch(() => {});
+  let progressGeometry = {
+    width: innerWidth,
+    sectionTop: scrub.offsetTop,
+    distance: Math.max(1, scrub.offsetHeight - innerHeight),
   };
-  addEventListener('pointerdown', prime, { once: true });
-  addEventListener('touchstart', prime, { once: true, passive: true });
+  const readProgress = () => {
+    if (Math.abs(innerWidth - progressGeometry.width) >= 1) {
+      progressGeometry = {
+        width: innerWidth,
+        sectionTop: scrub.offsetTop,
+        distance: Math.max(1, scrub.offsetHeight - innerHeight),
+      };
+    }
+    return scrollProgress(
+      window.scrollY,
+      progressGeometry.sectionTop,
+      progressGeometry.distance + innerHeight,
+      innerHeight,
+    );
+  };
 
   let posterHidden = false;
   video.addEventListener('seeked', () => {
@@ -463,9 +523,8 @@ function runVideoEngine(config, overlayNodes, video) {
   function tick(now) {
     const dt = Math.min(0.1, Math.max(0, (now - lastTime) / 1000));
     lastTime = now;
-    const raw = scrollProgress(
-      window.scrollY, scrub.offsetTop, scrub.offsetHeight, innerHeight,
-    );
+    const raw = readProgress();
+    scrubProgressDebug = raw;
     const target = lingerEase(applyHolds(raw, holds), linger);
     smoothProgress = smooth(smoothProgress, target, k, dt);
     const time = progressToTime(smoothProgress, duration);
@@ -486,6 +545,7 @@ async function start() {
 
   let config;
   let overlayNodes;
+  let removeVideoPrime = () => {};
   try {
     const response = await fetch('config.json', { cache: 'no-store' });
     if (!response.ok) throw new Error('Config request failed: HTTP ' + response.status);
@@ -500,6 +560,9 @@ async function start() {
     }
 
     applyTheme(config);
+    if (!reducedMotion && selectScrubMode(config) === 'video') {
+      removeVideoPrime = installVideoPrime(scrubVideo);
+    }
     await loadPoster(config);
     overlayNodes = renderCopy(config);
     await loadFont(config);
@@ -526,6 +589,7 @@ async function start() {
     try {
       video = await loadScrubVideo(config);
     } catch (error) {
+      removeVideoPrime();
       showFatalError(error);
       return;
     }

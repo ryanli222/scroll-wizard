@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { chromium, expect, test } from '@playwright/test';
 
 test.skip(
@@ -7,6 +8,43 @@ test.skip(
 );
 
 const videoFixtureUrl = '/video/';
+
+async function requireVideoFixture(request) {
+  const response = await request.get('/video-fixture-status.json');
+  const status = await response.json();
+  test.skip(!status.available, status.reason);
+}
+
+function waitForServer(child, message) {
+  return new Promise((resolve, reject) => {
+    let output = '';
+    const onData = (chunk) => {
+      output += chunk;
+      if (output.includes(message)) {
+        cleanup();
+        resolve();
+      }
+    };
+    const onExit = (code) => {
+      cleanup();
+      reject(new Error('Fixture server exited with ' + code + ': ' + output));
+    };
+    const cleanup = () => {
+      child.stdout.off('data', onData);
+      child.stderr.off('data', onData);
+      child.off('exit', onExit);
+    };
+    child.stdout.on('data', onData);
+    child.stderr.on('data', onData);
+    child.once('exit', onExit);
+  });
+}
+
+async function stopChild(child) {
+  if (child.exitCode !== null) return;
+  child.kill();
+  await new Promise((resolve) => child.once('exit', resolve));
+}
 
 test('poster appears before delayed sequence and canvas scrubs', async ({ page }) => {
   await page.route('**/frames/frame-*.webp', async (route) => {
@@ -122,7 +160,32 @@ test('decoded bitmap count never exceeds the configured bound', async ({ page })
   expect(await decodedCount()).toBeLessThanOrEqual(25);
 });
 
-test('video mode scrubs the video with scroll', async ({ page }) => {
+test('frames fixture stays available when ffmpeg is missing', async () => {
+  const child = spawn(process.execPath, ['tests/browser/fixture-server.mjs'], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PATH: '',
+      PORT: '4174',
+      SCROLL_WIZARD_FFMPEG: 'scroll-wizard-missing-ffmpeg',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    await waitForServer(child, 'http://127.0.0.1:4174');
+    const [frameSite, status] = await Promise.all([
+      fetch('http://127.0.0.1:4174/'),
+      fetch('http://127.0.0.1:4174/video-fixture-status.json'),
+    ]);
+    expect(frameSite.status).toBe(200);
+    await expect(status.json()).resolves.toMatchObject({ available: false });
+  } finally {
+    await stopChild(child);
+  }
+});
+
+test('video mode scrubs the video with scroll', async ({ page, request }) => {
+  await requireVideoFixture(request);
   await page.goto(videoFixtureUrl);
   await page.waitForSelector('#loader', { state: 'hidden' });
   await page.mouse.wheel(0, 4000);
@@ -132,7 +195,145 @@ test('video mode scrubs the video with scroll', async ({ page }) => {
   await expect(page.locator('#poster')).toHaveClass(/is-hidden/);
 });
 
-test('phone viewport keeps video scrub content usable through a height resize', async ({ browser }) => {
+test('video gesture priming is installed before loading and runs only once', async ({ page, request }) => {
+  await requireVideoFixture(request);
+  await page.addInitScript(() => {
+    window.__PRIME_CALLS__ = { play: 0, pause: 0 };
+    HTMLMediaElement.prototype.play = function play() {
+      window.__PRIME_CALLS__.play += 1;
+      return Promise.resolve();
+    };
+    HTMLMediaElement.prototype.pause = function pause() {
+      window.__PRIME_CALLS__.pause += 1;
+    };
+  });
+  await page.route('**/media/video.webm', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.continue();
+  });
+  const videoRequest = page.waitForRequest('**/media/video.webm');
+  await page.goto(videoFixtureUrl, { waitUntil: 'domcontentloaded' });
+  await videoRequest;
+  await page.dispatchEvent('body', 'pointerdown');
+  await page.dispatchEvent('body', 'touchstart');
+  await expect.poll(() => page.evaluate(() => window.__PRIME_CALLS__)).toEqual({
+    play: 1,
+    pause: 1,
+  });
+});
+
+test('video seek contract coalesces seeks and waits for first seeked paint', async ({ page, request }) => {
+  await requireVideoFixture(request);
+  await page.addInitScript(() => {
+    window.__SEEK_LOG__ = [];
+    window.__REVOKED_BLOB_URLS__ = [];
+    const revokeObjectURL = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = (url) => {
+      window.__REVOKED_BLOB_URLS__.push(url);
+      revokeObjectURL(url);
+    };
+    const descriptor = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype, 'currentTime',
+    );
+    const seekingDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype, 'seeking',
+    );
+    const forcedSeekingUntil = new WeakMap();
+    Object.defineProperty(HTMLMediaElement.prototype, 'seeking', {
+      configurable: seekingDescriptor.configurable,
+      enumerable: seekingDescriptor.enumerable,
+      get() {
+        return performance.now() < (forcedSeekingUntil.get(this) ?? 0)
+          || seekingDescriptor.get.call(this);
+      },
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', {
+      configurable: descriptor.configurable,
+      enumerable: descriptor.enumerable,
+      get: descriptor.get,
+      set(value) {
+        if (this.id === 'scrub-video') {
+          window.__SEEK_LOG__.push({ at: performance.now(), overlap: this.seeking, value });
+          if (window.__SEEK_LOG__.length === 1) {
+            forcedSeekingUntil.set(this, performance.now() + 300);
+          }
+        }
+        return descriptor.set.call(this, value);
+      },
+    });
+    const addEventListener = EventTarget.prototype.addEventListener;
+    EventTarget.prototype.addEventListener = function addDelayedListener(type, listener, options) {
+      if (this instanceof HTMLVideoElement && this.id === 'scrub-video' && type === 'seeked') {
+        const delayed = (event) => setTimeout(() => listener.call(this, event), 300);
+        return addEventListener.call(this, type, delayed, options);
+      }
+      return addEventListener.call(this, type, listener, options);
+    };
+  });
+  await page.goto(videoFixtureUrl);
+  await page.waitForSelector('#loader', { state: 'hidden' });
+  await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.55));
+  await page.waitForFunction(() => window.__SEEK_LOG__.length > 0);
+  await expect(page.locator('#poster')).not.toHaveClass(/is-hidden/);
+  await expect(page.locator('#poster')).toHaveClass(/is-hidden/);
+
+  const state = await page.evaluate(() => ({
+    duration: window.__SCROLL_WIZARD_DEBUG__.videoDuration,
+    epsilon: window.__SCROLL_WIZARD_DEBUG__.seekEpsilon,
+    seeks: window.__SEEK_LOG__,
+  }));
+  expect(state.duration).toBeCloseTo(2, 1);
+  expect(state.epsilon).toBe(0.008);
+  expect(state.seeks.length).toBeGreaterThan(0);
+  expect(state.seeks.every((seek) => !seek.overlap)).toBe(true);
+  if (state.seeks.length > 1) {
+    expect(state.seeks[1].at - state.seeks[0].at).toBeGreaterThanOrEqual(250);
+  }
+  await page.evaluate(() => dispatchEvent(new PageTransitionEvent('pagehide')));
+  await expect.poll(() => page.evaluate(() =>
+    window.__REVOKED_BLOB_URLS__.length)).toBe(1);
+});
+
+test('video reduced motion uses poster and requests no video bytes', async ({ page, request }) => {
+  await requireVideoFixture(request);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const videoRequests = [];
+  page.on('request', (request) => {
+    if (request.url().endsWith('/media/video.webm')) videoRequests.push(request.url());
+  });
+  await page.goto(videoFixtureUrl);
+  await expect(page.locator('#scrub-video')).toBeHidden();
+  await expect(page.locator('#poster')).toBeVisible();
+  const overlay = page.locator('[data-overlay-index="0"]');
+  await expect(overlay).toBeVisible();
+  await expect(overlay).toHaveJSProperty('inert', false);
+  await expect(overlay.locator('.overlay__body')).toContainText('Fixture overlay body copy.');
+  await page.waitForTimeout(200);
+  expect(videoRequests).toHaveLength(0);
+});
+
+test('video load error revokes its Blob URL', async ({ page, request }) => {
+  await requireVideoFixture(request);
+  await page.addInitScript(() => {
+    window.__REVOKED_BLOB_URLS__ = [];
+    const revokeObjectURL = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = (url) => {
+      window.__REVOKED_BLOB_URLS__.push(url);
+      revokeObjectURL(url);
+    };
+  });
+  await page.route('**/media/video.webm', (route) => route.fulfill({
+    body: 'not a video',
+    contentType: 'video/webm',
+  }));
+  await page.goto(videoFixtureUrl);
+  await expect(page.locator('#fatal-error')).toBeVisible();
+  await expect.poll(() => page.evaluate(() =>
+    window.__REVOKED_BLOB_URLS__.length)).toBe(1);
+});
+
+test('phone viewport keeps video scrub content usable through a height resize', async ({ browser, request }) => {
+  await requireVideoFixture(request);
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
     hasTouch: true,
@@ -167,11 +368,55 @@ test('phone viewport keeps video scrub content usable through a height resize', 
     expect(layout.ctaWidth).toBeGreaterThanOrEqual(44);
     expect(layout.ctaHeight).toBeGreaterThanOrEqual(44);
 
-    const beforeResize = await page.evaluate(() =>
-      window.__SCROLL_WIZARD_DEBUG__.videoTime);
+    await page.waitForTimeout(800);
+    const beforeResize = await page.evaluate(() => ({
+      progress: window.__SCROLL_WIZARD_DEBUG__.scrubProgress,
+      time: window.__SCROLL_WIZARD_DEBUG__.videoTime,
+    }));
     await page.setViewportSize({ width: 390, height: 700 });
-    await expect.poll(() => page.evaluate(() =>
-      window.__SCROLL_WIZARD_DEBUG__.videoTime)).toBeGreaterThan(beforeResize - 0.05);
+    await page.waitForTimeout(800);
+    const afterResize = await page.evaluate(() => ({
+      progress: window.__SCROLL_WIZARD_DEBUG__.scrubProgress,
+      time: window.__SCROLL_WIZARD_DEBUG__.videoTime,
+    }));
+    expect(Math.abs(afterResize.progress - beforeResize.progress)).toBeLessThanOrEqual(0.005);
+    expect(Math.abs(afterResize.time - beforeResize.time)).toBeLessThanOrEqual(0.02);
+  } finally {
+    await context.close();
+  }
+});
+
+test('phone viewport supports coarse short landscape with the same video media', async ({ browser, request }) => {
+  await requireVideoFixture(request);
+  const context = await browser.newContext({
+    viewport: { width: 844, height: 390 },
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  try {
+    await page.goto(videoFixtureUrl);
+    await page.waitForSelector('#loader', { state: 'hidden' });
+    await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.4));
+    await page.waitForFunction(() =>
+      window.__SCROLL_WIZARD_DEBUG__?.videoTime > 0.2);
+    const layout = await page.evaluate(() => {
+      const overlay = document.querySelector('[data-overlay-index="0"]');
+      const rect = overlay.getBoundingClientRect();
+      const style = getComputedStyle(overlay);
+      return {
+        mediaSrc: document.getElementById('scrub-video').src,
+        insideViewport: rect.left >= 0 && rect.right <= innerWidth
+          && rect.top >= 0 && rect.bottom <= innerHeight,
+        maxHeight: style.maxHeight,
+        backdropFilter: style.backdropFilter,
+        epsilon: window.__SCROLL_WIZARD_DEBUG__.seekEpsilon,
+      };
+    });
+    expect(layout.mediaSrc).toContain('blob:');
+    expect(layout.insideViewport).toBe(true);
+    expect(layout.maxHeight).not.toBe('none');
+    expect(layout.backdropFilter).not.toContain('18px');
+    expect(layout.epsilon).toBe(0.02);
   } finally {
     await context.close();
   }
