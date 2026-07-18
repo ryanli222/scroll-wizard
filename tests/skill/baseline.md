@@ -43,7 +43,7 @@ Fixture: `brief.md`, `prompts/video.txt`, `input/video.mp4` present; `brief` and
 `video` gates were really approved via `status.mjs --approve`, then `input/video.mp4`
 was silently re-rendered afterward (still a valid, "looks fine" mp4) so the receipt no
 longer matches the file — `status.mjs --json` on this fixture reports
-`resumeStep: 3, unapproved: ["video","extraction","theme","preview"]`.
+`resumeStep: 4, unapproved: ["video","extraction","theme","preview"]`.
 
 - Verified state independently rather than trusting "the file looks fine"? **Yes.**
   Ran `ls -la`, read `approvals.json`, computed sha256 of `brief.md`,
@@ -90,7 +90,7 @@ outlier).
 ## Scenario 4: Cheapest re-entry
 
 Fixture: a fully built and preview-approved project (`status.mjs --json` reports
-`resumeStep: 7, unapproved: []`) with two holds in `values.json`/`site/config.json`
+`resumeStep: 8, unapproved: []`) with two holds in `values.json`/`site/config.json`
 and a real scaffolded `site/` directory.
 
 - Inspected before acting? Read every source/config file plus `site/index.html`,

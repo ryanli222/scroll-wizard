@@ -14,7 +14,8 @@ import {
 
 export const GATES = [
   'brief',
-  'keyframes',
+  'storyboard',
+  'stills-preview',
   'video',
   'extraction',
   'theme',
@@ -22,6 +23,17 @@ export const GATES = [
 ];
 
 export function valuesProjection(values, gate) {
+  if (gate === 'storyboard') {
+    return (values.overlays ?? []).map((overlay) => ({
+      title: overlay.title ?? null,
+      body: overlay.body ?? null,
+      stats: overlay.stats ?? [],
+      cta: overlay.cta ?? null,
+      position: overlay.position ?? null,
+      at: overlay.at ?? null,
+      hold: Boolean(overlay.hold),
+    }));
+  }
   if (gate === 'extraction') {
     return {
       holds: (values.overlays ?? [])
@@ -61,8 +73,14 @@ export function manifestHash(entries) {
   return sha256Text(canonicalJson(normalized));
 }
 
-const KEYFRAME_PROMPT = /^keyframe-(first|last|ref-[1-3])\.txt$/;
+const KEYFRAME_PROMPT = /^keyframe-(first|last|ref-[1-3]|beat-\d{1,2})\.txt$/;
 const KEYFRAME_ROLES = ['first', 'last', 'ref-1', 'ref-2', 'ref-3'];
+
+function roleRank(role) {
+  const fixed = KEYFRAME_ROLES.indexOf(role);
+  if (fixed !== -1) return fixed;
+  return 100 + Number(role.slice('beat-'.length));
+}
 
 function logicalPath(...parts) {
   return parts
@@ -108,6 +126,14 @@ async function regularFilesRecursive(root, inspect = lstat) {
   ));
 }
 
+async function regularMediaFiles(root, inspect = lstat) {
+  const files = await regularFilesRecursive(root, inspect);
+  const paths = new Set(files.map((file) => logicalPath(file.path)));
+  return ['video.mp4', 'poster.webp', 'media.json'].every((name) => paths.has(name))
+    ? files
+    : [];
+}
+
 async function manifestFile(path, logical, inspect = lstat) {
   if (!await pathExists(path, inspect)) return null;
   if (!(await inspect(path)).isFile()) return null;
@@ -148,7 +174,7 @@ async function activeKeyframePlan(projectDir, inspect = lstat) {
       absolutePath: join(promptsDir, entry.name),
     }))
     .sort((left, right) => (
-      KEYFRAME_ROLES.indexOf(left.role) - KEYFRAME_ROLES.indexOf(right.role)
+      roleRank(left.role) - roleRank(right.role)
     ));
 
   const imageEntries = imagesRootAvailable
@@ -186,13 +212,13 @@ export async function buildGateManifest(projectDir, gate, inspect = lstat) {
     return entry ? [entry] : null;
   }
 
-  if (gate === 'keyframes') {
+  if (gate === 'storyboard') {
     const plan = await activeKeyframePlan(projectDir, inspect);
     if (!plan.prompts.length || plan.incompleteRoles.length) return null;
     const selectedImages = plan.images.filter((image) => (
       plan.prompts.some((prompt) => prompt.role === image.role)
     ));
-    return sortManifestEntries([
+    const entries = [
       ...await Promise.all(plan.prompts.map((prompt) => manifestFile(
         prompt.absolutePath,
         logicalPath('prompts', prompt.name),
@@ -203,7 +229,14 @@ export async function buildGateManifest(projectDir, gate, inspect = lstat) {
         logicalPath('input/keyframes', image.name),
         inspect,
       ))),
-    ]);
+    ];
+    const values = await readJsonObject(join(projectDir, 'values.json'), 'values.json');
+    if (!values) return null;
+    entries.push({
+      path: 'values.json#storyboard',
+      sha256: sha256Text(canonicalJson(valuesProjection(values, 'storyboard'))),
+    });
+    return sortManifestEntries(entries);
   }
 
   if (gate === 'video') {
@@ -216,13 +249,34 @@ export async function buildGateManifest(projectDir, gate, inspect = lstat) {
   }
 
   const valuesPath = join(projectDir, 'values.json');
+  if (gate === 'stills-preview') {
+    const frames = await regularFilesRecursive(join(projectDir, 'frames'), inspect);
+    const values = await readJsonObject(valuesPath, 'values.json');
+    if (!frames.length || !values) return null;
+    return sortManifestEntries([
+      ...await hashFiles(frames, 'frames'),
+      {
+        path: 'values.json#storyboard',
+        sha256: sha256Text(canonicalJson(valuesProjection(values, 'storyboard'))),
+      },
+    ]);
+  }
+
   if (gate === 'extraction') {
+    const projectMedia = await regularMediaFiles(join(projectDir, 'media'), inspect);
+    const siteRoot = join(projectDir, 'site');
+    const siteRootAvailable = await regularDirectoryExists(siteRoot, inspect);
+    const siteMedia = siteRootAvailable
+      ? await regularMediaFiles(join(siteRoot, 'media'), inspect)
+      : [];
+    const media = projectMedia.length ? projectMedia : siteMedia;
+    if (media.length) return sortManifestEntries(await hashFiles(media, 'media'));
+
     const projectFrames = await regularFilesRecursive(
       join(projectDir, 'frames'),
       inspect,
     );
-    const siteRoot = join(projectDir, 'site');
-    const siteFrames = await regularDirectoryExists(siteRoot, inspect)
+    const siteFrames = siteRootAvailable
       ? await regularFilesRecursive(join(siteRoot, 'frames'), inspect)
       : [];
     const frames = projectFrames.length ? projectFrames : siteFrames;
@@ -275,32 +329,65 @@ export async function buildInventory(projectDir, inspect = lstat) {
       join(projectDir, 'prompts', 'video.txt'),
       inspect,
     );
-  const manifestPairs = await Promise.all(GATES.map(async (gate) => {
+  const videoFileExists = await regularFileExists(
+    join(projectDir, 'input', 'video.mp4'),
+    inspect,
+  );
+  const values = await readJsonObject(join(projectDir, 'values.json'), 'values.json');
+  const projectMediaAvailable = (
+    await regularMediaFiles(join(projectDir, 'media'), inspect)
+  ).length > 0;
+  const siteRootAvailable = await regularDirectoryExists(
+    join(projectDir, 'site'), inspect,
+  );
+  const siteMediaAvailable = siteRootAvailable && (
+    await regularMediaFiles(join(projectDir, 'site', 'media'), inspect)
+  ).length > 0;
+  let manifestPairs = await Promise.all(GATES.map(async (gate) => {
     const entries = await buildGateManifest(projectDir, gate, inspect);
     return [gate, entries ? manifestHash(entries) : null];
   }));
   const approvalsPath = join(projectDir, 'approvals.json');
-  const receipts = await readJsonObject(approvalsPath, 'approvals.json') ?? {};
+  let receipts = await readJsonObject(approvalsPath, 'approvals.json') ?? {};
+  if (receipts.keyframes && !receipts.storyboard) {
+    const storyboardEntries = await buildGateManifest(projectDir, 'storyboard', inspect);
+    const legacyEntries = storyboardEntries?.filter(
+      (entry) => entry.path !== 'values.json#storyboard',
+    );
+    const legacyHash = legacyEntries?.length ? manifestHash(legacyEntries) : null;
+    if (legacyHash === receipts.keyframes.manifestHash) {
+      manifestPairs = manifestPairs.map(([gate, hash]) => (
+        gate === 'storyboard' ? [gate, legacyHash] : [gate, hash]
+      ));
+    }
+    receipts = { ...receipts, storyboard: receipts.keyframes };
+  }
 
   const paths = {
     video: join(projectDir, 'input', 'video.mp4'),
     projectFrames: join(projectDir, 'frames'),
     siteFrames: join(projectDir, 'site', 'frames'),
+    projectMedia: join(projectDir, 'media'),
+    siteMedia: join(projectDir, 'site', 'media'),
     brief: join(projectDir, 'brief.md'),
     values: join(projectDir, 'values.json'),
     config: join(projectDir, 'site', 'config.json'),
     keyframes: join(projectDir, 'input', 'keyframes'),
   };
-  const siteRootAvailable = await regularDirectoryExists(
-    join(projectDir, 'site'),
-    inspect,
-  );
   const mtimePairs = await Promise.all([
     ['video', newestMtime(paths.video, inspect)],
     ['projectFrames', newestMtime(paths.projectFrames, inspect)],
     [
       'siteFrames',
       siteRootAvailable ? newestMtime(paths.siteFrames, inspect) : null,
+    ],
+    [
+      'projectMedia',
+      projectMediaAvailable ? newestMtime(paths.projectMedia, inspect) : null,
+    ],
+    [
+      'siteMedia',
+      siteMediaAvailable ? newestMtime(paths.siteMedia, inspect) : null,
     ],
     ['brief', newestMtime(paths.brief, inspect)],
     ['values', newestMtime(paths.values, inspect)],
@@ -309,6 +396,7 @@ export async function buildInventory(projectDir, inspect = lstat) {
   ].map(async ([name, pendingMtime]) => [name, await pendingMtime]));
   const mtimes = Object.fromEntries(mtimePairs);
   const activeFramesMtime = mtimes.projectFrames ?? mtimes.siteFrames;
+  const activeMediaMtime = mtimes.projectMedia ?? mtimes.siteMedia;
   const stale = [];
   if (
     mtimes.keyframes !== null
@@ -324,32 +412,51 @@ export async function buildInventory(projectDir, inspect = lstat) {
   ) {
     stale.push('extraction');
   }
+  if (
+    mtimes.video !== null
+    && activeMediaMtime !== null
+    && mtimes.video > activeMediaMtime
+    && !stale.includes('extraction')
+  ) {
+    stale.push('extraction');
+  }
   const projectFramesOutrunSite = mtimes.projectFrames !== null
     && (mtimes.siteFrames === null || mtimes.projectFrames > mtimes.siteFrames);
+  const projectMediaOutrunSite = mtimes.projectMedia !== null
+    && (mtimes.siteMedia === null || mtimes.projectMedia > mtimes.siteMedia);
   const sourceOutrunsConfig = mtimes.config !== null
     && [mtimes.brief, mtimes.values].some((mtime) => (
       mtime !== null && mtime > mtimes.config
     ));
-  if (projectFramesOutrunSite || sourceOutrunsConfig) stale.push('site');
+  if (projectFramesOutrunSite || projectMediaOutrunSite || sourceOutrunsConfig) {
+    stale.push('site');
+  }
 
   return {
     manifests: Object.fromEntries(manifestPairs),
     receipts,
-    incomplete: keyframePlan.incompleteRoles.map((role) => 'keyframes:' + role),
+    incomplete: keyframePlan.incompleteRoles.map((role) => 'storyboard:' + role),
     stale,
     keyframePromptCount: keyframePlan.prompts.length,
+    beatPromptCount: keyframePlan.prompts
+      .filter((prompt) => prompt.role.startsWith('beat-')).length,
     videoPromptExists,
+    videoFileExists,
+    videoEnabled: values?.generation?.video !== false,
+    scrubMode: values?.scrub?.mode
+      ?? (projectMediaAvailable || siteMediaAvailable ? 'video' : 'frames'),
     mtimes,
   };
 }
 
 function stepFor(item) {
   if (item === 'brief') return 1;
-  if (item.startsWith('keyframe')) return 2;
-  if (item === 'video') return 3;
-  if (item === 'extraction') return 4;
-  if (item === 'site' || item === 'theme') return 5;
-  if (item === 'preview') return 6;
+  if (item.startsWith('keyframe') || item.startsWith('storyboard')) return 2;
+  if (item === 'stills-preview') return 3;
+  if (item === 'video') return 4;
+  if (item === 'extraction') return 5;
+  if (item === 'site' || item === 'theme') return 6;
+  if (item === 'preview') return 7;
   return 1;
 }
 
@@ -369,10 +476,7 @@ export function resolveResume(inventory) {
   let chainBroken = false;
 
   for (const gate of GATES) {
-    const skippedKeyframes = gate === 'keyframes'
-      && inventory.keyframePromptCount === 0
-      && inventory.videoPromptExists;
-    if (skippedKeyframes) continue;
+    if (gateSkipped(gate, inventory)) continue;
 
     const currentHash = inventory.manifests[gate];
     const step = GATES.indexOf(gate) + 1;
@@ -397,14 +501,21 @@ export function resolveResume(inventory) {
     ...inventory.stale.map(stepFor),
   ];
   return finish(
-    actionableSteps.length ? Math.min(...actionableSteps) : 7,
+    actionableSteps.length ? Math.min(...actionableSteps) : 8,
     inventory,
     unapproved,
   );
 }
 
-function keyframesSkipped(inventory) {
-  return inventory.keyframePromptCount === 0 && inventory.videoPromptExists;
+function gateSkipped(gate, inventory) {
+  if (gate === 'storyboard') {
+    return inventory.keyframePromptCount === 0 && inventory.videoPromptExists;
+  }
+  if (gate === 'stills-preview') {
+    return inventory.beatPromptCount === 0 && inventory.videoFileExists;
+  }
+  if (gate === 'video') return !inventory.videoEnabled;
+  return false;
 }
 
 export async function approveGate(projectDir, gate) {
@@ -423,7 +534,7 @@ export async function approveGate(projectDir, gate) {
 
   let upstreamHash = null;
   for (const upstreamGate of GATES.slice(0, GATES.indexOf(gate))) {
-    if (upstreamGate === 'keyframes' && keyframesSkipped(inventory)) continue;
+    if (gateSkipped(upstreamGate, inventory)) continue;
     const manifest = inventory.manifests[upstreamGate];
     const receipt = inventory.receipts[upstreamGate];
     const valid = manifest
@@ -476,7 +587,7 @@ function parseArguments(argv) {
 }
 
 function stateForGate(gate, inventory, report) {
-  if (gate === 'keyframes' && keyframesSkipped(inventory)) return 'skipped';
+  if (gateSkipped(gate, inventory)) return 'skipped';
   const step = GATES.indexOf(gate) + 1;
   const incomplete = inventory.incomplete.some((item) => stepFor(item) === step);
   if (incomplete || !inventory.manifests[gate]) return 'incomplete';

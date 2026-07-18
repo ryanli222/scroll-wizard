@@ -105,7 +105,10 @@ function completeInventory(overrides = {}) {
     incomplete: [],
     stale: [],
     keyframePromptCount: 1,
+    beatPromptCount: 1,
     videoPromptExists: true,
+    videoFileExists: true,
+    videoEnabled: true,
     ...overrides,
   };
 }
@@ -178,7 +181,7 @@ describe('status inventory resolution', () => {
 
   it('reports a fully approved fresh chain as complete', () => {
     expect(resolveResume(completeInventory())).toEqual({
-      resumeStep: 7,
+      resumeStep: 8,
       staleness: [],
       incomplete: [],
       unapproved: [],
@@ -194,7 +197,8 @@ describe('status inventory resolution', () => {
       staleness: [],
       incomplete: [],
       unapproved: [
-        'brief', 'keyframes', 'video', 'extraction', 'theme', 'preview',
+        'brief', 'storyboard', 'stills-preview', 'video',
+        'extraction', 'theme', 'preview',
       ],
     });
   });
@@ -204,7 +208,7 @@ describe('status inventory resolution', () => {
     delete inventory.receipts.extraction;
 
     expect(resolveResume(inventory)).toMatchObject({
-      resumeStep: 4,
+      resumeStep: 5,
       unapproved: ['extraction', 'theme', 'preview'],
     });
   });
@@ -217,7 +221,8 @@ describe('status inventory resolution', () => {
     expect(resolveResume(inventory)).toMatchObject({
       resumeStep: 1,
       unapproved: [
-        'brief', 'keyframes', 'video', 'extraction', 'theme', 'preview',
+        'brief', 'storyboard', 'stills-preview', 'video',
+        'extraction', 'theme', 'preview',
       ],
     });
   });
@@ -227,7 +232,7 @@ describe('status inventory resolution', () => {
     delete inventory.receipts.preview;
 
     expect(resolveResume(inventory)).toEqual({
-      resumeStep: 3,
+      resumeStep: 4,
       staleness: ['video'],
       incomplete: [],
       unapproved: ['preview'],
@@ -236,7 +241,7 @@ describe('status inventory resolution', () => {
 
   it('takes the earliest step across incomplete, stale, and unapproved signals', () => {
     const inventory = completeInventory({
-      incomplete: ['keyframes'],
+      incomplete: ['storyboard'],
       stale: ['extraction'],
     });
     delete inventory.receipts.preview;
@@ -244,7 +249,7 @@ describe('status inventory resolution', () => {
     expect(resolveResume(inventory)).toEqual({
       resumeStep: 2,
       staleness: ['extraction'],
-      incomplete: ['keyframes'],
+      incomplete: ['storyboard'],
       unapproved: ['preview'],
     });
   });
@@ -254,7 +259,7 @@ describe('status inventory resolution', () => {
     inventory.manifests.video = null;
 
     expect(resolveResume(inventory)).toMatchObject({
-      resumeStep: 3,
+      resumeStep: 4,
       unapproved: ['video', 'extraction', 'theme', 'preview'],
     });
   });
@@ -262,41 +267,45 @@ describe('status inventory resolution', () => {
   it('resumes at missing keyframes before a video prompt establishes the skip', () => {
     const inventory = completeInventory({
       keyframePromptCount: 0,
+      beatPromptCount: 0,
       videoPromptExists: false,
+      videoFileExists: false,
     });
-    inventory.manifests.keyframes = null;
-    delete inventory.receipts.keyframes;
+    inventory.manifests.storyboard = null;
+    delete inventory.receipts.storyboard;
 
     expect(resolveResume(inventory)).toMatchObject({
       resumeStep: 2,
-      unapproved: ['keyframes', 'video', 'extraction', 'theme', 'preview'],
+      unapproved: [
+        'storyboard', 'stills-preview', 'video', 'extraction', 'theme', 'preview',
+      ],
     });
   });
 
   it('links video directly to brief when keyframes are skipped', () => {
-    const inventory = completeInventory({ keyframePromptCount: 0 });
-    inventory.manifests.keyframes = null;
-    delete inventory.receipts.keyframes;
+    const inventory = completeInventory({ keyframePromptCount: 0, beatPromptCount: 0 });
+    inventory.manifests.storyboard = null;
+    delete inventory.receipts.storyboard;
     inventory.receipts.video.basedOn = inventory.manifests.brief;
 
     expect(resolveResume(inventory)).toMatchObject({
-      resumeStep: 7,
+      resumeStep: 8,
       unapproved: [],
     });
   });
 
   it('returns incomplete and staleness details with their earliest resume step', () => {
     expect(resolveResume(completeInventory({
-      incomplete: ['keyframes'],
+      incomplete: ['storyboard'],
     }))).toMatchObject({
       resumeStep: 2,
-      incomplete: ['keyframes'],
+      incomplete: ['storyboard'],
     });
 
     expect(resolveResume(completeInventory({
       stale: ['video', 'extraction', 'site'],
     }))).toMatchObject({
-      resumeStep: 3,
+      resumeStep: 4,
       staleness: ['video', 'extraction', 'site'],
     });
   });
@@ -391,13 +400,17 @@ describe('gate manifests', () => {
     await writeFile(join(projectDir, 'input', 'keyframes', 'first.png'), 'first image');
     await writeFile(join(projectDir, 'input', 'keyframes', 'ref-1.webp'), 'ref image');
     await writeFile(join(projectDir, 'input', 'keyframes', 'ref-2.png'), 'unplanned');
+    await writeJson(join(projectDir, 'values.json'), {
+      overlays: [{ title: 'Approved copy', at: [0.1, 0.2], position: 'left' }],
+    });
 
-    expect((await buildGateManifest(projectDir, 'keyframes')).map(({ path }) => path))
+    expect((await buildGateManifest(projectDir, 'storyboard')).map(({ path }) => path))
       .toEqual([
         'input/keyframes/first.png',
         'input/keyframes/ref-1.webp',
         'prompts/keyframe-first.txt',
         'prompts/keyframe-ref-1.txt',
+        'values.json#storyboard',
       ]);
   });
 
@@ -458,14 +471,14 @@ describe('gate manifests', () => {
     );
     expect(promptsBlocked.keyframePromptCount).toBe(0);
     expect(promptsBlocked.videoPromptExists).toBe(false);
-    expect(promptsBlocked.manifests.keyframes).toBeNull();
+    expect(promptsBlocked.manifests.storyboard).toBeNull();
 
     const imagesBlocked = await buildInventory(
       projectDir,
       noFollowInspection(keyframesRoot),
     );
-    expect(imagesBlocked.incomplete).toEqual(['keyframes:first']);
-    expect(imagesBlocked.manifests.keyframes).toBeNull();
+    expect(imagesBlocked.incomplete).toEqual(['storyboard:first']);
+    expect(imagesBlocked.manifests.storyboard).toBeNull();
     expect(imagesBlocked.mtimes.keyframes).toBeNull();
   });
 });
@@ -482,9 +495,9 @@ describe('filesystem inventory and approvals', () => {
     await approveGate(projectDir, 'brief');
 
     const inventory = await buildInventory(projectDir);
-    expect(inventory.incomplete).toEqual(['keyframes:last']);
-    expect(inventory.manifests.keyframes).toBeNull();
-    await expect(approveGate(projectDir, 'keyframes')).rejects.toThrow(/last.*incomplete/i);
+    expect(inventory.incomplete).toEqual(['storyboard:last']);
+    expect(inventory.manifests.storyboard).toBeNull();
+    await expect(approveGate(projectDir, 'storyboard')).rejects.toThrow(/last.*incomplete/i);
   });
 
   it('resumes at keyframes until video.txt makes an empty plan explicitly skipped', async () => {
@@ -511,16 +524,16 @@ describe('filesystem inventory and approvals', () => {
       manifestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       timestamp: expect.any(String),
     });
-    const keyframeReceipt = await approveGate(projectDir, 'keyframes');
-    expect(keyframeReceipt.basedOn).toBe(briefReceipt.manifestHash);
+    const storyboardReceipt = await approveGate(projectDir, 'storyboard');
+    expect(storyboardReceipt.basedOn).toBe(briefReceipt.manifestHash);
     const videoReceipt = await approveGate(projectDir, 'video');
-    expect(videoReceipt.basedOn).toBe(keyframeReceipt.manifestHash);
+    expect(videoReceipt.basedOn).toBe(storyboardReceipt.manifestHash);
     await approveGate(projectDir, 'extraction');
     await approveGate(projectDir, 'theme');
     await approveGate(projectDir, 'preview');
 
     expect(resolveResume(await buildInventory(projectDir))).toMatchObject({
-      resumeStep: 7,
+      resumeStep: 8,
       unapproved: [],
     });
     const approvals = JSON.parse(
@@ -535,7 +548,7 @@ describe('filesystem inventory and approvals', () => {
     const changed = resolveResume(await buildInventory(projectDir));
     expect(changed.resumeStep).toBe(1);
     expect(changed.unapproved).toEqual([
-      'brief', 'keyframes', 'video', 'extraction', 'theme', 'preview',
+      'brief', 'storyboard', 'video', 'extraction', 'theme', 'preview',
     ]);
 
     await approveGate(projectDir, 'brief');
@@ -543,10 +556,10 @@ describe('filesystem inventory and approvals', () => {
       await readFile(join(projectDir, 'approvals.json'), 'utf8'),
     );
     expect(Object.keys(preserved).sort()).toEqual([
-      'brief', 'external', 'extraction', 'keyframes', 'preview', 'theme', 'video',
+      'brief', 'external', 'extraction', 'preview', 'storyboard', 'theme', 'video',
     ]);
     expect(resolveResume(await buildInventory(projectDir)).unapproved).toEqual([
-      'keyframes', 'video', 'extraction', 'theme', 'preview',
+      'storyboard', 'video', 'extraction', 'theme', 'preview',
     ]);
   });
 
@@ -622,13 +635,15 @@ describe('status CLI', () => {
 
     expect(await main([projectDir], io)).toBe(0);
     const output = io.log.mock.calls.flat().join('\n');
-    expect(output).toContain('4. extraction: stale');
-    expect(output).not.toContain('4. extraction: ready-unapproved');
+    expect(output).toContain('5. extraction: stale');
+    expect(output).not.toContain('5. extraction: ready-unapproved');
   });
 
   it('prints stale before needs re-review when the receipt chain is invalid', async () => {
     const projectDir = await createCompleteProject();
-    for (const gate of GATES) await approveGate(projectDir, gate);
+    for (const gate of GATES.filter((item) => item !== 'stills-preview')) {
+      await approveGate(projectDir, gate);
+    }
     await writeFile(join(projectDir, 'brief.md'), '# Changed brief\n');
     const future = new Date(Date.now() + 10_000);
     await utimes(join(projectDir, 'input', 'video.mp4'), future, future);
@@ -636,8 +651,8 @@ describe('status CLI', () => {
 
     expect(await main([projectDir], io)).toBe(0);
     const output = io.log.mock.calls.flat().join('\n');
-    expect(output).toContain('4. extraction: stale');
-    expect(output).not.toContain('4. extraction: needs re-review');
+    expect(output).toContain('5. extraction: stale');
+    expect(output).not.toContain('5. extraction: needs re-review');
   });
 
   it('prints missing artifacts as incomplete even when their chain is invalid', async () => {
@@ -657,7 +672,7 @@ describe('status CLI', () => {
     expect(await main([projectDir, '--json'], jsonIo)).toBe(0);
     expect(JSON.parse(jsonIo.log.mock.calls[0][0])).toMatchObject({
       resumeStep: 1,
-      unapproved: GATES,
+      unapproved: GATES.filter((gate) => gate !== 'stills-preview'),
     });
     await expect(readFile(join(projectDir, 'approvals.json'), 'utf8'))
       .rejects.toMatchObject({ code: 'ENOENT' });
@@ -685,5 +700,176 @@ describe('status CLI', () => {
     expect(await main([await temporaryProject(), '--approve', 'brief'], incompleteIo))
       .toBe(2);
     expect(incompleteIo.error.mock.calls[0][0]).toMatch(/incomplete/i);
+  });
+});
+
+async function createV2Project({ videoEnabled = true, media = false } = {}) {
+  const projectDir = await temporaryProject('scroll-wizard-status-v2-');
+  await mkdir(join(projectDir, 'prompts'), { recursive: true });
+  await mkdir(join(projectDir, 'input', 'keyframes'), { recursive: true });
+  await mkdir(join(projectDir, 'frames'), { recursive: true });
+  await mkdir(join(projectDir, 'site', 'frames'), { recursive: true });
+  await writeFile(join(projectDir, 'brief.md'), '# V2 brief\n');
+  await writeFile(join(projectDir, 'prompts', 'keyframe-beat-1.txt'), 'Beat one\n');
+  await writeFile(join(projectDir, 'input', 'keyframes', 'beat-1.png'), 'beat image');
+  await writeFile(join(projectDir, 'prompts', 'video.txt'), 'Video prompt\n');
+  if (videoEnabled) await writeFile(join(projectDir, 'input', 'video.mp4'), 'video');
+  await writeFile(join(projectDir, 'frames', 'frame-0001.webp'), 'frame');
+  await writeFile(join(projectDir, 'site', 'frames', 'frame-0001.webp'), 'frame');
+  await writeFile(join(projectDir, 'site', 'index.html'), '<main></main>');
+  await writeJson(join(projectDir, 'values.json'), {
+    brand: { name: 'Aster' },
+    generation: { video: videoEnabled },
+    scrub: { mode: media ? 'video' : 'frames' },
+    overlays: [{
+      title: 'Beat one', body: 'Opening copy', position: 'left',
+      at: [0.1, 0.3], hold: false,
+    }],
+    theme: { bg: '#000000', text: '#ffffff' },
+  });
+  if (media) {
+    await mkdir(join(projectDir, 'media'));
+    await writeFile(join(projectDir, 'media', 'video.mp4'), 'encoded video');
+    await writeFile(join(projectDir, 'media', 'poster.webp'), 'poster');
+    await writeJson(join(projectDir, 'media', 'media.json'), {
+      duration: 7.8, width: 1600, height: 900,
+    });
+  }
+  await writeJson(join(projectDir, 'site', 'config.json'), { frames: { count: 1 } });
+  return projectDir;
+}
+
+describe('v2 status gates', () => {
+  it('uses the seven v2 gates in order', () => {
+    expect(GATES).toEqual([
+      'brief', 'storyboard', 'stills-preview', 'video',
+      'extraction', 'theme', 'preview',
+    ]);
+  });
+
+  it('maps a legacy keyframes receipt to storyboard and skips only stills-preview', async () => {
+    const projectDir = await createCompleteProject();
+    const gateManifests = {};
+    for (const gate of ['brief', 'storyboard', 'video', 'extraction', 'theme']) {
+      const entries = await buildGateManifest(projectDir, gate);
+      gateManifests[gate] = manifestHash(gate === 'storyboard'
+        ? entries.filter((entry) => entry.path !== 'values.json#storyboard')
+        : entries);
+    }
+    let basedOn = null;
+    const receipts = {};
+    for (const gate of ['brief', 'storyboard', 'video', 'extraction', 'theme']) {
+      const key = gate === 'storyboard' ? 'keyframes' : gate;
+      receipts[key] = { manifestHash: gateManifests[gate], basedOn };
+      basedOn = gateManifests[gate];
+    }
+    await writeJson(join(projectDir, 'approvals.json'), receipts);
+
+    const inventory = await buildInventory(projectDir);
+    const report = resolveResume(inventory);
+    expect(inventory.receipts.storyboard).toEqual(receipts.keyframes);
+    expect(report.unapproved).not.toEqual(expect.arrayContaining([
+      'brief', 'storyboard', 'stills-preview', 'video', 'extraction', 'theme',
+    ]));
+    expect(report.unapproved).toEqual(['preview']);
+    const io = fakeIo();
+    await main([projectDir], io);
+    expect(io.log.mock.calls.flat().join('\n')).toContain('3. stills-preview: skipped');
+  });
+
+  it('builds video-mode extraction from project media and never skips extraction', async () => {
+    const projectDir = await createV2Project({ media: true });
+    const manifest = await buildGateManifest(projectDir, 'extraction');
+    expect(manifest.map((entry) => entry.path)).toEqual([
+      'media/media.json', 'media/poster.webp', 'media/video.mp4',
+    ]);
+    const inventory = await buildInventory(projectDir);
+    expect(resolveResume(inventory).unapproved).toContain('extraction');
+  });
+
+  it('ignores unrelated project-media leftovers in favor of a valid site media set', async () => {
+    const projectDir = await createV2Project();
+    await writeFile(join(projectDir, 'media-note.txt'), 'outside media');
+    await mkdir(join(projectDir, 'media'));
+    await writeFile(join(projectDir, 'media', 'notes.txt'), 'preserved unrelated file');
+    await mkdir(join(projectDir, 'site', 'media'));
+    await writeFile(join(projectDir, 'site', 'media', 'video.mp4'), 'site video');
+    await writeFile(join(projectDir, 'site', 'media', 'poster.webp'), 'site poster');
+    await writeJson(join(projectDir, 'site', 'media', 'media.json'), {
+      duration: 7.8, width: 1600, height: 900,
+    });
+    const valuesPath = join(projectDir, 'values.json');
+    const values = JSON.parse(await readFile(valuesPath, 'utf8'));
+    delete values.scrub.mode;
+    await writeJson(valuesPath, values);
+
+    const manifest = await buildGateManifest(projectDir, 'extraction');
+    expect(manifest.map((entry) => entry.path)).toEqual([
+      'media/media.json', 'media/poster.webp', 'media/video.mp4',
+    ]);
+    const inventory = await buildInventory(projectDir);
+    expect(inventory.scrubMode).toBe('video');
+    expect(inventory.mtimes.projectMedia).toBeNull();
+    expect(inventory.mtimes.siteMedia).not.toBeNull();
+  });
+
+  it('builds storyboard beats and reports a missing beat image as incomplete', async () => {
+    const projectDir = await createV2Project();
+    const complete = await buildGateManifest(projectDir, 'storyboard');
+    expect(complete.map((entry) => entry.path)).toEqual([
+      'input/keyframes/beat-1.png',
+      'prompts/keyframe-beat-1.txt',
+      'values.json#storyboard',
+    ]);
+    await writeFile(join(projectDir, 'prompts', 'keyframe-beat-2.txt'), 'Beat two\n');
+    const inventory = await buildInventory(projectDir);
+    expect(inventory.manifests.storyboard).toBeNull();
+    expect(inventory.incomplete).toContain('storyboard:beat-2');
+  });
+
+  it('uses resume step 8 after every required v2 gate is approved', async () => {
+    const projectDir = await createV2Project();
+    for (const gate of GATES) await approveGate(projectDir, gate);
+    expect(resolveResume(await buildInventory(projectDir))).toMatchObject({
+      resumeStep: 8,
+      unapproved: [],
+    });
+  });
+
+  it('invalidates storyboard for overlay edits but not theme-only edits', async () => {
+    const projectDir = await createV2Project();
+    const before = manifestHash(await buildGateManifest(projectDir, 'storyboard'));
+    const valuesPath = join(projectDir, 'values.json');
+    const values = JSON.parse(await readFile(valuesPath, 'utf8'));
+    await writeJson(valuesPath, { ...values, theme: { bg: '#ffffff' } });
+    expect(manifestHash(await buildGateManifest(projectDir, 'storyboard'))).toBe(before);
+    await writeJson(valuesPath, {
+      ...values,
+      overlays: [{ ...values.overlays[0], body: 'Changed', position: 'right', at: [0.2, 0.4] }],
+    });
+    expect(manifestHash(await buildGateManifest(projectDir, 'storyboard'))).not.toBe(before);
+  });
+
+  it('keeps stills-preview stable across theme and mutable site rebuilds', async () => {
+    const projectDir = await createV2Project();
+    const before = manifestHash(await buildGateManifest(projectDir, 'stills-preview'));
+    const valuesPath = join(projectDir, 'values.json');
+    const values = JSON.parse(await readFile(valuesPath, 'utf8'));
+    await writeJson(valuesPath, { ...values, theme: { bg: '#ffffff' } });
+    await writeFile(join(projectDir, 'site', 'index.html'), '<main>rebuilt</main>');
+    await writeFile(join(projectDir, 'site', 'theme-only.css'), 'body {}');
+    expect(manifestHash(await buildGateManifest(projectDir, 'stills-preview'))).toBe(before);
+  });
+
+  it('skips disabled video but still requires and approves frame extraction', async () => {
+    const projectDir = await createV2Project({ videoEnabled: false });
+    const inventory = await buildInventory(projectDir);
+    expect(inventory.manifests.extraction).not.toBeNull();
+    for (const gate of GATES.filter((gate) => gate !== 'video')) {
+      await approveGate(projectDir, gate);
+    }
+    const report = resolveResume(await buildInventory(projectDir));
+    expect(report.unapproved).toEqual([]);
+    expect(report.resumeStep).toBe(8);
   });
 });
