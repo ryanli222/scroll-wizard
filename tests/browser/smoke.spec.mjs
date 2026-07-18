@@ -51,11 +51,11 @@ test('poster appears before delayed sequence and canvas scrubs', async ({ page }
   const firstEngineFetchObserved = new Promise((resolve) => {
     observeFirstEngineFetch = resolve;
   });
-  let releaseFirstEngineFetch;
-  const firstEngineFetchReleased = new Promise((resolve) => {
-    releaseFirstEngineFetch = resolve;
+  let releaseEngineFetches;
+  const engineFetchesReleased = new Promise((resolve) => {
+    releaseEngineFetches = resolve;
   });
-  let heldFirstEngineFetch = false;
+  let observedEngineFetch = false;
 
   await page.route('**/frames/frame-*.webp', async (route) => {
     const request = route.request();
@@ -64,11 +64,12 @@ test('poster appears before delayed sequence and canvas scrubs', async ({ page }
       await route.continue();
       return;
     }
-    if (isFirstFrame && !heldFirstEngineFetch) {
-      heldFirstEngineFetch = true;
+    if (!observedEngineFetch) {
+      observedEngineFetch = true;
       observeFirstEngineFetch();
-      await firstEngineFetchReleased;
-    } else if (!isFirstFrame) {
+    }
+    await engineFetchesReleased;
+    if (!isFirstFrame) {
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
     await route.continue();
@@ -80,7 +81,7 @@ test('poster appears before delayed sequence and canvas scrubs', async ({ page }
     await expect(page.locator('#poster')).toBeVisible();
     await expect(page.locator('#poster')).not.toHaveClass(/is-hidden/);
   } finally {
-    releaseFirstEngineFetch();
+    releaseEngineFetches();
   }
 
   await expect.poll(() => page.evaluate(() =>
