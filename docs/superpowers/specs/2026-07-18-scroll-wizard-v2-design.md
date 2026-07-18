@@ -1,154 +1,260 @@
-# Scroll Wizard v2 — Storyboard-First Pipeline, Video Scrub, Pencil Loop
+# Scroll Wizard v2 — Storyboard-First Pipeline, Budgeted Video Scrub, Pencil Loop
 
 Date: 2026-07-18
-Status: Approved design, pending implementation plan
+Status: Approved design, pending revised implementation plan
 
 ## Problem
 
-Three inadequacies in the current skill, confirmed against the `scrollcar` project:
+Scroll Wizard v1 exposes three problems, confirmed against the `scrollcar`
+project:
 
-1. **Runtime performance.** The generated site extracts 100+ webp frames from the
-   video and preloads all of them before hiding the loader. Payload is several MB
-   and startup blocks on the full fetch.
-2. **Workflow cost/speed.** Feedback arrives only after the paid/time-expensive
-   video generation. Overlay copy, layout, and beat placement are iterated blind.
-3. **Visual quality.** Overlay placement and beat timing are guessed numerically in
-   `values.json` instead of seen and adjusted.
+1. **Runtime performance.** Generated sites extract and preload 100+ WebP frames
+   before hiding the loader. Payload and startup cost grow with frame count.
+2. **Late feedback.** Copy, layout, beat timing, and visual direction are reviewed
+   only after expensive video generation.
+3. **Hidden spending decisions.** Generation routes and rerolls do not share one
+   durable hard budget with exact per-call approvals.
 
-Research input: [oso95/scroll-world](https://github.com/oso95/scroll-world). Key
-findings adopted: native `<video>` seek-scrubbing instead of frame extraction
-(blob-load, seek coalescing, poster-until-first-paint, iOS priming), linger easing,
-distance-based lazy loading. Key finding rejected: multi-scene connector-clip
-pipeline (~2N-1 paid video generations for N scenes — the cost structure we are
-explicitly avoiding).
+Research input: [oso95/scroll-world](https://github.com/oso95/scroll-world).
+Adopted runtime ideas include blob-loaded native video, seek coalescing,
+poster-until-first-paint, iOS priming, linger easing, and distance-based loading.
+Rejected workflow ideas include the 2N-1 connector-clip cost model and mandatory
+separate portrait renders. Scroll Wizard keeps one inexpensive storyboard-first
+feedback loop and a static vanilla-JS output.
 
 ## Design
 
-### 1. Dual playback modes
+### 1. Adaptive storyboard intake
 
-`values.json` / `config.json` gain `scrub.mode: "video" | "frames"` (default
-`"video"` when a video exists, `"frames"` otherwise).
+The wizard analyzes the supplied content, page length, number of distinct claims,
+CTA complexity, and motion concept. It recommends a beat count from 3 to 10 and
+explains the recommendation; the user has final control.
 
-**Video mode** (new, default):
+Guidance:
 
-- A local ffmpeg step re-encodes `input/video.mp4` all-intra (`-g 1`) so every
-  frame is a keyframe and seeking is instant. Free, local, no quality gate needed
-  beyond the existing video gate.
-- Engine blob-loads the mp4 (`fetch` → `blob:` URL), scrubs `video.currentTime`
-  from smoothed scroll progress.
-- Seek coalescing: never issue a seek while `video.seeking`; adaptive seek epsilon
-  (smaller on desktop, larger on coarse pointers).
-- The existing poster `<img>` stays visible until the first `seeked` event paints,
-  then swaps via a class toggle.
-- iOS priming: muted `play()` → `pause()` on first user gesture so the first seek
-  paints instead of staying blank.
-- Linger easing: optional per-hold cubic remap that slows playback where overlay
-  copy peaks and accelerates between beats. Pure function in `scrub-core.js` with
-  endpoints fixed at f(0)=0, f(1)=1.
-- Reduced motion: video never loads; poster + always-visible overlays (current
-  behavior).
+- 3 beats: simple hero, one value proposition, one CTA.
+- 4–5 beats: normal product landing page with several features.
+- 6–7 beats: information-heavy product, process, or narrative.
+- 8–10 beats: detailed journey, catalog, or many distinct sections.
 
-**Frames mode** (existing engine, kept):
+Each beat contains one still concept and one overlay specification: title, body,
+stats, CTA, position, normalized timing range, and optional hold. Before any paid
+generation, the wizard presents a free text-only beat outline for approval.
 
-- Used for the stills-only site (§3), as fallback where video scrubbing proves
-  choppy, and for very short sequences.
-- Fix the startup block: hide the loader once the poster plus the initial decode
-  window are ready, not after `preloadAll` completes; `preloadAll` continues in
-  the background.
+The product-scrub register defaults `scrub.linger` to 0.35 and favors one hero
+product on clean ground with orbit, dolly, light-sweep, or peel-back motion. Holds
+align with feature beats. The journey register remains available and unchanged.
 
-Payload becomes an explicit intake knob, always presented with an estimated
-size and mid-4G load time: in frames mode it is extraction density
-(count / width / format / quality); in video mode it is the re-encode's
-resolution and quality (CRF).
+### 2. Progressive storyboard feedback loop
 
-### 2. Storyboard step (new; replaces the keyframes step)
+After outline approval, the wizard collects one still per beat through one of:
 
-Between intake and video:
+- user-provided images;
+- manual handoff cards for an external image tool; or
+- individually approved image-generation calls.
 
-- Intake asks for a **beat count** (3–10). Each beat = one still + one overlay
-  (title/body/stats/CTA/position/hold).
-- One still per beat is produced through the existing keyframe machinery: manual
-  Flow handoff cards by default, or per-image money-gated API calls.
-- **Pencil review loop:** each accepted still is loaded into a Pencil canvas —
-  still as background layer, overlay content as editable text/frame nodes. The
-  user iterates visually (position, copy, hierarchy); screenshots verify state.
-  On approval, node geometry and copy export back into `values.json` overlays:
-  `position`, normalized `at` ranges, `hold` flags, copy text.
-- Pencil availability is checked at preflight. When absent, the loop degrades to
-  the current flow (numeric overlay editing in `values.json` + browser preview).
-- Gate: the existing `keyframes` gate becomes the **storyboard** gate — approve
-  the reviewed beat set (stills + overlays) as a whole.
+Draft stills are preferred until composition and narrative are accepted. Every
+accepted still is placed in a Pencil canvas with its overlay as editable nodes.
+The user reviews screenshots and iterates on copy, hierarchy, composition, and
+position. Approved copy, geometry, timing, and hold state export into
+`values.json`.
 
-### 3. Stills-only preview site (free tier)
+When Pencil is unavailable, the flow degrades explicitly to numeric overlay
+editing plus browser preview. It never claims that Pencil review occurred.
 
-Immediately after the storyboard gate, scaffold a site from the beats alone:
-frames mode with N = beat count, crossfading between stills, overlays live. Two
-uses:
+The storyboard gate approves the beat set as a whole. Its receipt covers prompts,
+accepted stills, and a canonical digest of the overlay fields relevant to
+storyboard approval. Later theme-only changes must not stale the storyboard.
 
-- **Zero-video budget mode.** Shippable as-is; no video is ever generated.
-- **Storyboard proof.** The approved stills become the video generation's
-  keyframes (first / last / refs), so the one paid generation is aimed by cheap
-  iteration instead of guesswork.
+### 3. First-class budget control
 
-### 4. Video generation budget menu
+Intake offers four presets—Free, Cheapest, Balanced, and Quality-first—and lets
+the user set an exact total hard cap. The Free preset permits no paid API calls;
+it uses user-provided assets or manual tools already covered by the user's own
+plan. Other presets may allocate budget to still generation, video generation,
+and rerolls.
 
-At the point video is chosen (after the storyboard gate), present a menu of
-generation routes with cost character — never assume a single vendor:
+The wizard explains the preset and stores a durable `budget.json` ledger with:
 
-| Route | Cost character | Notes |
-|---|---|---|
-| Manual handoff (Flow or any tool the user has) | User's own plan credits | Default, current behavior |
-| Seedance / Kling API | Per-clip API pricing | Frame-locked models; needed if seams ever matter |
-| Higgsfield API | Per-clip, typically pricier | scroll-world's default; offered, not assumed |
-| Shorter/lower-res variant of any route | Cheapest paid | 4–6 s, 720p; fine for scrub since playback is scroll-paced |
-| No video | Free | Stills-only site from §3 |
+- currency, preset, and hard cap;
+- still, video, and reroll allocations;
+- quoted, reserved, spent, and remaining amounts;
+- provider, model, duration, and resolution for each approved call; and
+- transaction status and timestamps.
 
-Rules: only offer API routes actually available in the current session
-(preflight-verified, per the existing "never promise unconfirmed capability"
-rule); every API call keeps the existing per-call money gate (exact prompt +
-cost statement + approval). The menu shows an estimated cost per route before
-the user picks.
+Before every paid call, the wizard shows the exact prompt, provider/model,
+maximum quoted cost, remaining budget after the call, and expected result. It
+reserves the maximum quoted cost before starting. A call cannot start when the
+reservation would exceed the hard cap. Completion reconciles the reservation
+against the known actual cost.
 
-### 5. Apple product register (deepened at intake)
+Interrupted or billing-uncertain calls become `unknown` and must be reconciled
+before retrying. This prevents accidental double-spend. Provider credentials and
+secrets never enter project files.
 
-The existing product-scrub register gains:
+When the cap is reached, generation stops and current work is preserved. The
+wizard explains what a specific additional amount would buy—such as one reroll,
+a higher-quality model, longer duration, or improved resolution—and which visible
+weakness it is likely to improve. It does not guarantee improvement or raise the
+cap automatically. The user may keep the current result, ship the stills-only
+site, switch to a cheaper provider, reallocate unused budget, or explicitly raise
+the cap by an exact amount.
 
-- Prompt craft aimed at a hero product on clean ground: orbit / dolly /
-  light-sweep / peel-back, no environment fly-through.
-- Holds aligned to feature beats, with composed blur-free frames requested at
-  each hold point.
-- Linger easing on by default in this register so motion settles where overlays
-  peak.
+### 4. Free stills-only preview
 
-The journey register is unchanged. Register is chosen at intake as today.
+Immediately after storyboard approval, the wizard converts the accepted beat
+stills into an N-frame sequence and scaffolds a frames-mode website. The site
+crossfades between stills with live overlays. This step adds no video-generation
+cost; acquiring the stills themselves follows the selected budget preset and
+per-call approvals.
 
-### 6. Gates (v2 order)
+This is both:
 
-brief → **storyboard** (stills + Pencil-reviewed overlays) → **stills preview**
-(light; browser check of the free site) → *(optional)* video → extraction
-(**skipped in video mode**; replaced by the all-intra re-encode + validation) →
-theme → preview.
+- a shippable zero-video endpoint; and
+- the required storyboard proof before optional video spending.
 
-Receipts, staleness tracking, and `status.mjs` semantics are unchanged; the
-`keyframes` gate is renamed/reshaped to `storyboard`, and a `stills-preview`
-light gate is added. `status.mjs` must handle projects created by v1 (existing
-`keyframes` receipts remain valid for resumed projects).
+The stills-preview receipt is derived from stable storyboard inputs and preview
+configuration, not the later mutable final `site/` tree. Theme and final-site
+changes therefore do not invalidate an already approved storyboard preview.
+
+### 5. Capability-driven video menu
+
+After the stills preview is approved, the wizard probes the current session for
+usable providers, credentials, CLIs, and manual tools. It displays only actionable
+routes and always includes No video and Manual handoff.
+
+Each route shows:
+
+- provider and model;
+- supported duration, resolution, and aspect ratio;
+- first-frame, last-frame, and multiple-reference capabilities;
+- estimated generation and reroll cost;
+- availability, quota, or preview limitations; and
+- expected quality, speed, and control tradeoffs.
+
+Candidate routes include Veo, Seedance, Kling, Higgsfield, and any other verified
+provider. Names in this list are not promises: the menu must hide or mark
+non-actionable any route that preflight cannot use. Pricing is refreshed from the
+available provider/session rather than hard-coded as timeless data.
+
+The wizard recommends the best route inside the remaining budget. It weighs
+reference control and the use case, not only price. Beat 1 anchors the first frame
+and the final beat anchors the last frame when supported. Approved middle beats
+are passed as references only when the selected provider supports them; otherwise
+the wizard states that they guide the prompt and timing but are not frame-locked.
+
+Every generation and reroll retains the per-call money gate. There are no
+automatic rerolls.
+
+### 6. Dual playback modes
+
+`values.json` / generated `config.json` support
+`scrub.mode: "video" | "frames"`. When the mode is omitted, video is selected if
+a valid `video` block exists; otherwise frames is selected.
+
+**Video mode** is the default after an approved video exists:
+
+- fetch the local video into a Blob URL so seeking does not depend on HTTP range
+  support;
+- scrub `video.currentTime` from smoothed scroll progress;
+- never issue a new seek while `video.seeking`;
+- use a smaller seek epsilon on desktop and a larger one on coarse pointers;
+- keep the poster visible until the first `seeked` event paints;
+- prime muted playback on the first gesture for iOS; and
+- apply optional linger easing with fixed endpoints.
+
+The balanced encoding preset uses native-resolution H.264, no audio, faststart,
+and a small GOP (`-g 8`) for substantially smaller payloads than all-intra video.
+An all-intra (`-g 1`) maximum-seek-responsiveness preset remains available with an
+explicit payload and load-time warning. Width and CRF remain intake knobs.
+
+**Frames mode** remains available for the stills-only site, short sequences, and
+fallback when measured video scrubbing is unsatisfactory. Its loader hides after
+the poster and initial decode window paint; background preloading continues.
+
+Reduced-motion mode never loads scrub video and does not preload a full frame
+sequence. It shows the poster and readable, always-available content.
+
+### 7. Mobile usability
+
+Every generated site must be usable on phones with the same stills and video. No
+separate portrait generation or additional mobile media spend is required.
+
+- Landscape media uses deliberate `object-fit: cover` cropping.
+- Overlay layout adapts to preserve subject visibility and readable line lengths.
+- CTAs remain touch-sized and keyboard accessible.
+- Notch and home-indicator safe areas are respected.
+- Coarse pointers use the mobile seek epsilon.
+- iOS video priming occurs on the first gesture.
+- Height-only mobile address-bar resizes do not jump scroll layout.
+- Expensive decorative effects are reduced on mobile/weak devices.
+- Reduced-motion behavior remains complete and readable.
+
+### 8. Gates and backward-compatible receipts
+
+The v2 gate order is:
+
+1. `brief`
+2. `storyboard`
+3. `stills-preview`
+4. `video`
+5. `extraction`
+6. `theme`
+7. `preview`
+
+`extraction` remains the backward-compatible gate name for playback derivation:
+
+- stills-only mode converts beat stills into frames;
+- frames mode extracts frames from an approved video; and
+- video mode encodes and validates scrub media.
+
+Video mode skips the frame-extraction operation, not the gate. If the user selects
+No video, the `video` gate is skipped and stills-derived playback completes the
+`extraction` gate normally.
+
+Legacy `keyframes` receipts map to `storyboard`. Existing v1 `extraction` receipts
+remain valid when their manifests match. Resume step numbering is 1–7, with 8
+meaning complete.
+
+### 9. Failure behavior
+
+- Provider preflight failures remove the route from the actionable menu.
+- Provider failures preserve the storyboard, budget ledger, and current site.
+- A failed request is never retried automatically.
+- Repeated failures recommend a verified alternative without changing providers
+  silently.
+- Derived frames/media and generated sites use atomic directory replacement with
+  rollback.
+- Invalid or stale receipts block downstream approval with an actionable reason.
+- The free stills-only route remains available after paid-path failures.
 
 ## Explicitly out of scope
 
-- Multi-scene connector clips (scroll-world's 2N-1 cost model).
-- Separate mobile portrait renders; CSS cover-crop stays until proven inadequate.
-- A custom browser-based frame editor (Pencil covers it; revisit only if Pencil
-  proves unavailable for the user's real workflow).
-- Framework integrations; output stays a static vanilla-JS site.
+- Multi-scene connector clips and the 2N-1 generation model.
+- Separate mobile portrait renders.
+- A custom browser-based frame editor.
+- Framework integrations; output remains a static vanilla-JS site.
+- Automatic budget increases or automatic paid rerolls.
 
 ## Testing
 
-- `scrub-core.js` additions (linger easing, video-time mapping) are pure
-  functions with vitest coverage, matching the existing pattern.
-- Playwright: one scenario per mode — video-mode site scrubs and paints past the
-  poster; frames-mode loader hides after the initial window (not full preload).
-- Pipeline scripts (`reencode`, storyboard scaffold) get the same CLI test
-  treatment as `extract-frames.mjs`.
-- Pencil round-trip is manual-verified (screenshot before/after) since it depends
+- Pure-function Vitest coverage for linger easing, video-time mapping, adaptive
+  beat recommendations, provider capability filtering/ranking, and cost totals.
+- Budget tests for hard-cap enforcement, reservations, reconciliation, cap
+  increases, and interrupted/unknown calls.
+- Receipt tests for overlay-sensitive storyboard staleness, stable
+  stills-preview manifests, video/frames derivation, gate skips, and v1 aliases.
+- CLI tests for argument parsing, exit codes, runner failures, JSON reports,
+  atomic replacement, and rollback for every new pipeline script.
+- Playwright scenarios for video mode, frames-mode initial-window loading,
+  reduced motion, and narrow mobile viewports with touch-sized controls and safe
+  layout.
+- Browser video fixtures use VP9 WebM because Playwright Chromium cannot decode
+  H.264 in this environment; production output remains MP4/H.264.
+- Run the complete unit/integration suite with `npx vitest run` and the browser
+  suite with `npx playwright test`.
+- Run `status.mjs` against
+  `C:\Users\ryanl\desktop\scrolltest\scrollcar` to prove v1 receipts resume
+  without re-approval.
+- Pencil round-trip remains manually verified with screenshots because it depends
   on a live MCP session.
