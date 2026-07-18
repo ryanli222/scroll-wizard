@@ -157,6 +157,36 @@ describe('provider planning', () => {
     ]);
   });
 
+  it('applies the hard budget to manual and no-video routes', () => {
+    const result = filterProviderRoutes([
+      {
+        available: true,
+        costMicros: 500001,
+        id: 'over-budget-manual',
+        noVideo: true,
+      },
+      {
+        available: true,
+        costMicros: 500000,
+        id: 'within-budget-manual',
+        noVideo: true,
+      },
+    ], {
+      budgetMicros: 500000,
+      duration: 30,
+      firstLast: true,
+      preset: 'balanced',
+      referenceCount: 10,
+      resolution: '4k',
+    });
+
+    expect(result.eligible.map((route) => route.id))
+      .toEqual(['within-budget-manual']);
+    expect(result.excluded).toEqual([
+      { id: 'over-budget-manual', reasons: ['over-budget'] },
+    ]);
+  });
+
   it('ranks cheapest by cost and quality-first by quality', () => {
     expect(rankProviderRoutes(routes.slice(0, 3), 'cheapest')[0].id).toBe('none');
     expect(rankProviderRoutes(routes.slice(0, 3), 'quality-first')[0].id)

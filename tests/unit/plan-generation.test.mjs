@@ -179,6 +179,31 @@ describe('plan-generation main', () => {
     });
   });
 
+  it('excludes over-budget manual routes for non-free planning', async () => {
+    const io = fakeIo();
+    const runner = vi.fn().mockResolvedValue(JSON.stringify([
+      {
+        available: true,
+        costMicros: 500001,
+        id: 'over-budget-manual-route',
+        noVideo: true,
+        quality: 2,
+        speed: 2,
+      },
+    ]));
+
+    expect(await main(routeArgs('runtime-routes.json'), io, runner)).toBe(0);
+
+    expect(JSON.parse(io.log.mock.calls[0][0])).toEqual({
+      eligible: [],
+      excluded: [{
+        id: 'over-budget-manual-route',
+        reasons: ['over-budget'],
+      }],
+      recommended: null,
+    });
+  });
+
   it('returns 2 for malformed runtime JSON', async () => {
     const root = await temporaryRoot();
     const routesFile = join(root, 'routes.json');

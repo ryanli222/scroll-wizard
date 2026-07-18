@@ -38,7 +38,7 @@ function exclusionReasons(route, requirements) {
   if (!route.available) reasons.push('unavailable');
   if (requirements.preset === 'free' && route.costMicros > 0) {
     reasons.push('paid-on-free');
-  } else if (!route.noVideo && route.costMicros > requirements.budgetMicros) {
+  } else if (route.costMicros > requirements.budgetMicros) {
     reasons.push('over-budget');
   }
   if (
