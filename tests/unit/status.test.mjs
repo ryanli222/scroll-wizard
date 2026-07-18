@@ -5,6 +5,7 @@ import {
   readFile,
   readdir,
   rename,
+  rm,
   utimes,
   writeFile,
 } from 'node:fs/promises';
@@ -859,6 +860,80 @@ describe('v2 status gates', () => {
     await writeFile(join(projectDir, 'site', 'index.html'), '<main>rebuilt</main>');
     await writeFile(join(projectDir, 'site', 'theme-only.css'), 'body {}');
     expect(manifestHash(await buildGateManifest(projectDir, 'stills-preview'))).toBe(before);
+  });
+
+  it('keeps stills-preview stable after scaffold moves fresh frames into site', async () => {
+    const projectDir = await createV2Project();
+    const before = manifestHash(await buildGateManifest(projectDir, 'stills-preview'));
+    await rm(join(projectDir, 'site', 'frames'), { recursive: true });
+    await rename(join(projectDir, 'frames'), join(projectDir, 'site', 'frames'));
+    const valuesPath = join(projectDir, 'values.json');
+    const values = JSON.parse(await readFile(valuesPath, 'utf8'));
+    await writeJson(valuesPath, { ...values, theme: { bg: '#ffffff' } });
+    await writeFile(join(projectDir, 'site', 'index.html'), '<main>theme rebuild</main>');
+    await writeFile(join(projectDir, 'site', 'theme.css'), 'body { color: white; }');
+
+    const after = await buildGateManifest(projectDir, 'stills-preview');
+    expect(after).not.toBeNull();
+    expect(after.map((entry) => entry.path)).toEqual([
+      'frames/frame-0001.webp', 'values.json#storyboard',
+    ]);
+    expect(manifestHash(after)).toBe(before);
+  });
+
+  it('uses only frames for explicit frames playback despite valid leftover media', async () => {
+    const projectDir = await createV2Project({ media: true });
+    const valuesPath = join(projectDir, 'values.json');
+    const values = JSON.parse(await readFile(valuesPath, 'utf8'));
+    await writeJson(valuesPath, { ...values, scrub: { mode: 'frames' } });
+    await writeJson(join(projectDir, 'site', 'config.json'), { frames: { count: 1 } });
+    const now = Date.now();
+    for (const name of ['video.mp4', 'poster.webp', 'media.json']) {
+      await utimes(
+        join(projectDir, 'media', name),
+        new Date(now + 20_000),
+        new Date(now + 20_000),
+      );
+    }
+
+    const manifest = await buildGateManifest(projectDir, 'extraction');
+    expect(manifest.map((entry) => entry.path)).toEqual([
+      'frames/frame-0001.webp', 'values.json#extraction',
+    ]);
+    expect((await buildInventory(projectDir)).stale).not.toContain('site');
+
+    await utimes(
+      join(projectDir, 'frames', 'frame-0001.webp'),
+      new Date(now + 30_000),
+      new Date(now + 30_000),
+    );
+    expect((await buildInventory(projectDir)).stale).toContain('site');
+  });
+
+  it('uses only media for explicit video playback and ignores leftover frame edits', async () => {
+    const projectDir = await createV2Project({ media: true });
+    await mkdir(join(projectDir, 'site', 'media'));
+    for (const name of ['video.mp4', 'poster.webp', 'media.json']) {
+      const source = join(projectDir, 'media', name);
+      await writeFile(join(projectDir, 'site', 'media', name), await readFile(source));
+    }
+    const now = Date.now();
+    await utimes(
+      join(projectDir, 'frames', 'frame-0001.webp'),
+      new Date(now + 20_000),
+      new Date(now + 20_000),
+    );
+
+    expect((await buildGateManifest(projectDir, 'extraction')).map((entry) => entry.path))
+      .toEqual(['media/media.json', 'media/poster.webp', 'media/video.mp4']);
+    expect((await buildInventory(projectDir)).stale).not.toContain('site');
+
+    await utimes(
+      join(projectDir, 'media', 'video.mp4'),
+      new Date(now + 30_000),
+      new Date(now + 30_000),
+    );
+    expect((await buildInventory(projectDir)).stale).toContain('site');
   });
 
   it('skips disabled video but still requires and approves frame extraction', async () => {

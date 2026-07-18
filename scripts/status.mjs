@@ -250,7 +250,12 @@ export async function buildGateManifest(projectDir, gate, inspect = lstat) {
 
   const valuesPath = join(projectDir, 'values.json');
   if (gate === 'stills-preview') {
-    const frames = await regularFilesRecursive(join(projectDir, 'frames'), inspect);
+    const projectFrames = await regularFilesRecursive(join(projectDir, 'frames'), inspect);
+    const siteRoot = join(projectDir, 'site');
+    const siteFrames = await regularDirectoryExists(siteRoot, inspect)
+      ? await regularFilesRecursive(join(siteRoot, 'frames'), inspect)
+      : [];
+    const frames = projectFrames.length ? projectFrames : siteFrames;
     const values = await readJsonObject(valuesPath, 'values.json');
     if (!frames.length || !values) return null;
     return sortManifestEntries([
@@ -263,6 +268,8 @@ export async function buildGateManifest(projectDir, gate, inspect = lstat) {
   }
 
   if (gate === 'extraction') {
+    const values = await readJsonObject(valuesPath, 'values.json');
+    if (!values) return null;
     const projectMedia = await regularMediaFiles(join(projectDir, 'media'), inspect);
     const siteRoot = join(projectDir, 'site');
     const siteRootAvailable = await regularDirectoryExists(siteRoot, inspect);
@@ -270,7 +277,10 @@ export async function buildGateManifest(projectDir, gate, inspect = lstat) {
       ? await regularMediaFiles(join(siteRoot, 'media'), inspect)
       : [];
     const media = projectMedia.length ? projectMedia : siteMedia;
-    if (media.length) return sortManifestEntries(await hashFiles(media, 'media'));
+    const scrubMode = values.scrub?.mode ?? (media.length ? 'video' : 'frames');
+    if (scrubMode === 'video') {
+      return media.length ? sortManifestEntries(await hashFiles(media, 'media')) : null;
+    }
 
     const projectFrames = await regularFilesRecursive(
       join(projectDir, 'frames'),
@@ -280,7 +290,6 @@ export async function buildGateManifest(projectDir, gate, inspect = lstat) {
       ? await regularFilesRecursive(join(siteRoot, 'frames'), inspect)
       : [];
     const frames = projectFrames.length ? projectFrames : siteFrames;
-    const values = await readJsonObject(valuesPath, 'values.json');
     if (!frames.length || !values) return null;
     return sortManifestEntries([
       ...await hashFiles(frames, 'frames'),
@@ -343,6 +352,8 @@ export async function buildInventory(projectDir, inspect = lstat) {
   const siteMediaAvailable = siteRootAvailable && (
     await regularMediaFiles(join(projectDir, 'site', 'media'), inspect)
   ).length > 0;
+  const scrubMode = values?.scrub?.mode
+    ?? (projectMediaAvailable || siteMediaAvailable ? 'video' : 'frames');
   let manifestPairs = await Promise.all(GATES.map(async (gate) => {
     const entries = await buildGateManifest(projectDir, gate, inspect);
     return [gate, entries ? manifestHash(entries) : null];
@@ -397,6 +408,9 @@ export async function buildInventory(projectDir, inspect = lstat) {
   const mtimes = Object.fromEntries(mtimePairs);
   const activeFramesMtime = mtimes.projectFrames ?? mtimes.siteFrames;
   const activeMediaMtime = mtimes.projectMedia ?? mtimes.siteMedia;
+  const activePlaybackMtime = scrubMode === 'video'
+    ? activeMediaMtime
+    : activeFramesMtime;
   const stale = [];
   if (
     mtimes.keyframes !== null
@@ -407,16 +421,8 @@ export async function buildInventory(projectDir, inspect = lstat) {
   }
   if (
     mtimes.video !== null
-    && activeFramesMtime !== null
-    && mtimes.video > activeFramesMtime
-  ) {
-    stale.push('extraction');
-  }
-  if (
-    mtimes.video !== null
-    && activeMediaMtime !== null
-    && mtimes.video > activeMediaMtime
-    && !stale.includes('extraction')
+    && activePlaybackMtime !== null
+    && mtimes.video > activePlaybackMtime
   ) {
     stale.push('extraction');
   }
@@ -428,7 +434,11 @@ export async function buildInventory(projectDir, inspect = lstat) {
     && [mtimes.brief, mtimes.values].some((mtime) => (
       mtime !== null && mtime > mtimes.config
     ));
-  if (projectFramesOutrunSite || projectMediaOutrunSite || sourceOutrunsConfig) {
+  if (
+    (scrubMode === 'frames' && projectFramesOutrunSite)
+    || (scrubMode === 'video' && projectMediaOutrunSite)
+    || sourceOutrunsConfig
+  ) {
     stale.push('site');
   }
 
@@ -443,8 +453,7 @@ export async function buildInventory(projectDir, inspect = lstat) {
     videoPromptExists,
     videoFileExists,
     videoEnabled: values?.generation?.video !== false,
-    scrubMode: values?.scrub?.mode
-      ?? (projectMediaAvailable || siteMediaAvailable ? 'video' : 'frames'),
+    scrubMode,
     mtimes,
   };
 }
