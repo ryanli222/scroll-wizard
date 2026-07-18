@@ -70,7 +70,9 @@ For every gate, follow this recipe and nothing shorter:
    continuing to the next step.
 
 "Light" gates use the same recipe with less ceremony (a short summary instead of a
-full artifact dump) — they are never skipped and never auto-approved.
+full artifact dump) — they are never skipped and never auto-approved. The only
+light-gate exception is `stills-preview` when `status.mjs` explicitly reports that
+legacy skip; never infer the exception from files or project history.
 
 ## Step 0: Preflight
 
@@ -92,7 +94,10 @@ full artifact dump) — they are never skipped and never auto-approved.
   count in `values.json`; the user, not the heuristic, has final control.
 - Ask for Free, Cheapest, Balanced, or Quality-first plus an exact hard cap in integer
   micros. Explain the choice and initialize `budget.json` with `budget.mjs init` before
-  any paid call. Free has a zero cap and uses only user-provided/manual assets.
+  any paid call. Show the explicit allocation command:
+  `node <skill-root>/scripts/budget.mjs <project> init --preset <preset> --cap-micros <cap> --still-micros <still> --video-micros <video> --reroll-micros <reroll>`.
+  Explain how the three integer-micro allocations fit within the cap before running
+  it. Free has a zero cap and uses only user-provided/manual assets.
 - Ask for the payload preset. Always state its estimated bytes and mid-4G load time;
   never describe a preset as merely "desktop" or "mobile" without the payload cost.
 - Ask per-stop purpose/copy/product/CTA/position only when the user actually wants
@@ -109,8 +114,9 @@ full artifact dump) — they are never skipped and never auto-approved.
 
 ## Step 2: Storyboard
 
-- Draft a free text-only outline for the confirmed beat count and review its narrative
-  before acquiring images.
+- Draft a free text-only outline for the confirmed beat count. Ask for explicit
+  approval of the free text-only outline and end the turn before acquiring stills or
+  making any paid generation call.
 - Write one active `prompts/keyframe-beat-<n>.txt` per beat. Beat 1 is the video's
   first-frame anchor and the final beat is its last-frame anchor when the later route
   supports those capabilities.
@@ -153,10 +159,10 @@ full artifact dump) — they are never skipped and never auto-approved.
   | Shorter/lower-res variant (4-6 s, 720p) | Cheapest paid |
   | No video - ship the stills site | Free |
 
-- Include Manual and No video only when applicable; include API routes only when they
-  are callable now. Run `plan-generation.mjs routes` against the persisted preflight
-  JSON, inside the ledger's remaining hard budget, and show ranked eligible routes plus
-  every excluded reason. Never rank providers informally.
+- Always include Manual and No video as unconditional menu entries; include API routes
+  only when they are callable now. Run `plan-generation.mjs routes` against the
+  persisted preflight JSON, inside the ledger's remaining hard budget, and show ranked
+  eligible routes plus every excluded reason. Never rank providers informally.
 - After route selection, write `prompts/video.txt` with one continuous slow shot, no
   cuts/text/watermark, and only references supported by that route. Unsupported middle
   beats guide prompt/timing but are not claimed as frame-locked.
@@ -164,7 +170,9 @@ full artifact dump) — they are never skipped and never auto-approved.
   generation or reroll, show the exact prompt/provider/model/maximum quote,
   remaining-after-call, and expected result; receive approval; reserve before calling;
   then `settle` the actual cost or mark an interrupted/billing-uncertain call `unknown`.
-  Reconcile unknown calls before retrying. There are no automatic rerolls.
+  When a failed call is definitively unbilled, settle it with actual cost 0 to release
+  the reservation. Reconcile unknown calls before retrying. There are no automatic
+  rerolls.
 - At the cap, stop and preserve current work. State the exact additional micros and
   which visible weakness that purchase is likely to improve; explicitly say quality is
   not guaranteed and never raise the cap automatically. Offer the current stills site,
