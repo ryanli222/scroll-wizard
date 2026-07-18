@@ -542,3 +542,68 @@ test('phone viewport keeps tall landscape overlay content reachable', async ({ b
     await context.close();
   }
 });
+
+test('phone viewport keeps tall portrait overlay content reachable', async ({ browser, request }) => {
+  await requireVideoFixture(request);
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  try {
+    await page.route('**/video/config.json', async (route) => {
+      const response = await route.fetch();
+      const config = await response.json();
+      config.overlays[0].body = Array(60).fill('Tall portrait fixture body copy.').join(' ');
+      config.overlays[0].stats = Array.from({ length: 20 }, (_value, index) => ({
+        label: 'Portrait metric ' + (index + 1),
+        value: String(index + 1),
+      }));
+      await route.fulfill({ response, json: config });
+    });
+    await page.goto(videoFixtureUrl);
+    await page.waitForSelector('#loader', { state: 'hidden' });
+    await page.evaluate(() => {
+      const scrub = document.getElementById('scrub');
+      scrollTo(0, scrub.offsetTop + (scrub.offsetHeight - innerHeight) * 0.4);
+    });
+    const overlay = page.locator('[data-overlay-index="0"]');
+    await expect(overlay).toHaveJSProperty('inert', false);
+    const initial = await overlay.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const title = node.querySelector('.overlay__title').getBoundingClientRect();
+      return {
+        clientHeight: node.clientHeight,
+        overflowY: getComputedStyle(node).overflowY,
+        rect: { bottom: rect.bottom, top: rect.top },
+        scrollHeight: node.scrollHeight,
+        title: { bottom: title.bottom, top: title.top },
+      };
+    });
+    expect(initial.overflowY).toBe('auto');
+    expect(initial.scrollHeight).toBeGreaterThan(initial.clientHeight);
+    expect(initial.rect.top).toBeGreaterThanOrEqual(0);
+    expect(initial.rect.bottom).toBeLessThanOrEqual(844);
+    expect(initial.title.top).toBeGreaterThanOrEqual(initial.rect.top);
+    expect(initial.title.bottom).toBeLessThanOrEqual(initial.rect.bottom);
+
+    await overlay.evaluate((node) => { node.scrollTop = node.scrollHeight; });
+    const reachable = await overlay.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const stats = node.querySelector('.stats').getBoundingClientRect();
+      const cta = node.querySelector('.overlay__cta').getBoundingClientRect();
+      return {
+        ctaBottom: cta.bottom,
+        ctaTop: cta.top,
+        rectBottom: rect.bottom,
+        rectTop: rect.top,
+        statsBottom: stats.bottom,
+      };
+    });
+    expect(reachable.statsBottom).toBeLessThanOrEqual(reachable.rectBottom);
+    expect(reachable.ctaTop).toBeGreaterThanOrEqual(reachable.rectTop);
+    expect(reachable.ctaBottom).toBeLessThanOrEqual(reachable.rectBottom);
+  } finally {
+    await context.close();
+  }
+});

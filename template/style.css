@@ -130,6 +130,9 @@ h1, h2, h3 { font-family: var(--display); }
   }
   .overlay {
     max-height: calc(100vh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
     padding: 1.25rem;
     backdrop-filter: blur(10px);
   }
