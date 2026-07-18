@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Storyboard-first pipeline with a native video seek-scrub playback mode, Pencil-reviewed beats, a free stills-only site, a video-generation budget menu, and v2 gates — per the approved spec `docs/superpowers/specs/2026-07-18-scroll-wizard-v2-design.md`.
+**Goal:** Build the approved adaptive storyboard-first pipeline with Pencil-reviewed beats, hard-capped generation spending, capability-filtered provider choices, a no-video stills site, responsive mobile playback, and backward-compatible v2 gates.
 
-**Architecture:** The static-site template gains a second playback mode (`scrub.mode: "video"`) that seeks an all-intra-encoded `<video>` instead of drawing extracted frames; two new CLI scripts (`reencode-video.mjs`, `stills-to-frames.mjs`) feed it; `status.mjs` gains the v2 gate order with skip rules and v1 receipt compatibility; `SKILL.md` rewires the workflow (storyboard + Pencil loop + budget menu + product register).
+**Architecture:** Pure planning helpers recommend beats and rank only preflight-verified provider routes; `budget.mjs` persists a reservation-based hard-cap ledger. The static template supports frames and blob-loaded video with responsive mobile behavior; pipeline scripts derive either balanced small-GOP media or still frames; `status.mjs` hashes stable gate-specific projections and preserves v1 receipts; `SKILL.md` orchestrates the approved feedback loop.
 
 **Tech Stack:** Node 20+ ESM, ffmpeg/ffprobe via `execFile`, vitest (unit), Playwright (browser smoke), vanilla JS template.
 
@@ -17,6 +17,9 @@
 - Run unit tests with `npx vitest run <file>`; browser tests with `npx playwright test`.
 - Commit after every task (message style: existing history, e.g. `feat: …`, `fix: …`, `docs: …`).
 - Existing v1 projects (receipts under gate name `keyframes`) must keep resuming without re-approval of completed gates.
+- Paid generation must reserve its maximum quoted amount in `budget.json` before starting and must never exceed the hard cap without an explicit cap increase.
+- Provider/model names and prices are runtime inputs from verified session capability checks; never hard-code a provider as universally available.
+- Mobile usability uses the same media assets; separate portrait generation is out of scope.
 
 ---
 
@@ -27,9 +30,9 @@
 - Test: `tests/unit/scrub-core.test.mjs`
 
 **Interfaces:**
-- Produces: `lingerEase(x, linger) => number` (0..1→0..1, endpoints fixed); `progressToTime(progress, duration, margin = 0.05) => seconds`; `validateConfig(config)` additionally accepts `scrub.mode` (`'frames'`|`'video'`, default `'frames'`), `scrub.linger` (number in [0,1), optional), and — when mode is `'video'` — requires `config.video = { src, poster, duration }` with `src`/`poster` as safe paths under `media/` and skips the `frames` block requirement.
+- Produces: `lingerEase(x, linger) => number`; `progressToTime(progress, duration, margin = 0.05) => seconds`; `selectScrubMode(config) => 'video'|'frames'` (explicit mode wins, otherwise video when a `video` block exists); `validateConfig(config)` accepts `scrub.linger` and requires safe `media/` assets in video mode without requiring frames.
 
-- [ ] **Step 1: Write failing tests** (append to `tests/unit/scrub-core.test.mjs`, importing the two new names from `../../template/scrub-core.js`):
+- [ ] **Step 1: Write failing tests** (append to `tests/unit/scrub-core.test.mjs`, importing `lingerEase`, `progressToTime`, and `selectScrubMode` from `../../template/scrub-core.js`):
 
 ```js
 describe('lingerEase', () => {
@@ -103,6 +106,13 @@ describe('validateConfig v2', () => {
     delete config.frames;
     expect(validateConfig(config).errors.length).toBeGreaterThan(0);
   });
+  it('defaults to video when a video block exists', () => {
+    const config = base();
+    delete config.frames;
+    config.video = { src: 'media/video.mp4', poster: 'media/poster.webp', duration: 8 };
+    expect(selectScrubMode(config)).toBe('video');
+    expect(validateConfig(config).errors).toEqual([]);
+  });
 });
 ```
 
@@ -124,6 +134,10 @@ export function progressToTime(progress, duration, margin = 0.05) {
   if (!Number.isFinite(duration) || duration <= 0) return 0;
   const end = Math.max(0, duration - margin);
   return clamp(Number.isFinite(progress) ? progress : 0, 0, 1) * end;
+}
+
+export function selectScrubMode(config) {
+  return config?.scrub?.mode ?? (config?.video ? 'video' : 'frames');
 }
 ```
 
@@ -160,7 +174,7 @@ function safeMediaPath(value) {
 In `validateConfig`, after the existing `scrub` checks add:
 
 ```js
-  const mode = config.scrub?.mode ?? 'frames';
+  const mode = selectScrubMode(config);
   if (!['frames', 'video'].includes(mode)) {
     addError('scrub.mode', 'scrub.mode', 'Mode must be "frames" or "video".');
   }
@@ -182,7 +196,27 @@ In `validateConfig`, after the existing `scrub` checks add:
   }
 ```
 
-Wrap the existing `frames` validation block (count/pattern/poster checks) in `if (mode !== 'video') { … }` so video mode does not require it.
+Move the frame checks below the mode declaration and wrap them exactly as follows so video mode does not require frames:
+
+```js
+  if (mode !== 'video') {
+    const frames = config.frames ?? {};
+    if (!Number.isInteger(frames.count) || frames.count < 1 || frames.count > 9999) {
+      addError('frames.count', 'frames.count', 'Frame count must be an integer from 1 to 9999.');
+    } else if (frames.count < 24 || frames.count > 400) {
+      warnings.push(issue('frames.budget', 'frames.count', 'Recommended frame count is 24 to 400.'));
+    }
+    if (typeof frames.pattern !== 'string' || !/\{index:\d+\}/.test(frames.pattern)) {
+      addError('frames.pattern', 'frames.pattern', 'Frame pattern requires an {index:N} token.');
+    } else if (!safeFramePath(frames.pattern)) {
+      addError('frames.pattern', 'frames.pattern',
+        'Frame pattern must be a normalized path under frames/.');
+    }
+    if (typeof frames.poster !== 'string' || !safeFramePath(frames.poster)) {
+      addError('frames.poster', 'frames.poster', 'Poster must be a path under frames/.');
+    }
+  }
+```
 
 - [ ] **Step 4: Run tests** — `npx vitest run tests/unit/scrub-core.test.mjs` — expect PASS, including all pre-existing tests.
 
@@ -200,17 +234,19 @@ Wrap the existing `frames` validation block (count/pattern/poster checks) in `if
 - Consumes: `lingerEase` from Task 1.
 - Produces: loader hides on first drawn frame, not after full preload; frames tick applies `lingerEase(applyHolds(raw, holds), config.scrub.linger ?? 0)`.
 
-- [ ] **Step 1: Read `tests/browser/smoke.spec.mjs`** and find the assertion that waits for the loader to hide. Add/adjust a test asserting the loader is hidden as soon as the canvas has painted a frame (`window.__SCROLL_WIZARD_DEBUG__.lastFrame >= 0`) without requiring `decodedCount` to equal the full frame count. Run `npx playwright test` first to confirm the suite is green before editing.
+- [ ] **Step 1: Read `tests/browser/smoke.spec.mjs` and `tests/browser/fixture-server.mjs`.** Run `npx playwright test` first to confirm the suite is green. Then make the frames fixture delay every frame after the initial decode window and add a test that waits for `#loader` to hide, captures debug state immediately, and asserts both `lastFrame >= 0` and `decodedCount < frameCount`. This test must fail against the old `preloadAll().then(() => loader.hidden = true)` behavior.
 
-- [ ] **Step 2: Implement in `template/scrub-engine.js`:**
+- [ ] **Step 2: Run to verify failure** — `npx playwright test tests/browser/smoke.spec.mjs --grep "loader"` — expect the loader assertion to time out while delayed background frames are outstanding.
+
+- [ ] **Step 3: Implement in `template/scrub-engine.js`:**
   - Import `lingerEase` in the existing import block from `./scrub-core.js`.
   - In `runEngine`, replace `store.preloadAll().then(() => { loader.hidden = true; });` with `store.preloadAll();` (progress bar keeps updating via `onProgress`).
   - In `tick`, where `posterHidden` flips to true, also `loader.hidden = true;`.
   - Change `const targetProgress = applyHolds(raw, holds);` to `const targetProgress = lingerEase(applyHolds(raw, holds), config.scrub.linger ?? 0);`.
 
-- [ ] **Step 3: Run** `npx playwright test` — expect PASS.
+- [ ] **Step 4: Run** `npx playwright test` — expect PASS.
 
-- [ ] **Step 4: Commit** — `git add template/scrub-engine.js tests/browser/smoke.spec.mjs && git commit -m "fix: hide loader on first painted frame; apply linger easing"`
+- [ ] **Step 5: Commit** — `git add template/scrub-engine.js tests/browser/ && git commit -m "fix: hide loader on first painted frame; apply linger easing"`
 
 ---
 
@@ -224,13 +260,17 @@ Wrap the existing `frames` validation block (count/pattern/poster checks) in `if
 - Consumes: `progressToTime`, `lingerEase`, v2 `validateConfig` (Task 1).
 - Produces: with `config.scrub.mode === 'video'` and `config.video = {src, poster, duration}`, the site blob-loads the video, scrubs `currentTime` with seek coalescing, keeps the poster until first `seeked`, primes playback on first gesture. Frames mode untouched.
 
-- [ ] **Step 1: Add the video element to `template/index.html`** directly after the poster `<img>`:
+- [ ] **Step 1: Write the failing browser scenarios first.** Use the VP9 fixture and exact video/mobile assertions specified later in this task. Do not change `template/` yet.
+
+- [ ] **Step 2: Run to verify failure** — `npx playwright test tests/browser/smoke.spec.mjs --grep "video mode|phone viewport"` — expect failure because `#scrub-video`, video-time debug state, and responsive behavior do not exist.
+
+- [ ] **Step 3: Add the video element to `template/index.html`** directly after the poster `<img>`:
 
 ```html
         <video id="scrub-video" class="scrub__video" muted playsinline aria-hidden="true"></video>
 ```
 
-- [ ] **Step 2: Add to `template/style.css`** (mirror the `.scrub__canvas` positioning block — read it first and copy its position/inset/size rules):
+- [ ] **Step 4: Add to `template/style.css`** (mirror the `.scrub__canvas` positioning block — read it first and copy its position/inset/size rules):
 
 ```css
 .scrub__video {
@@ -247,7 +287,7 @@ Wrap the existing `frames` validation block (count/pattern/poster checks) in `if
 }
 ```
 
-- [ ] **Step 3: Implement video mode in `template/scrub-engine.js`.**
+- [ ] **Step 5: Implement video mode in `template/scrub-engine.js`.**
 
 Add `progressToTime` to the scrub-core import. Extract the overlay/progress-bar updates from `runEngine`'s `tick` into shared helpers (and call them from `runEngine`):
 
@@ -339,12 +379,12 @@ function runVideoEngine(config, overlayNodes, video) {
 }
 ```
 
-In `loadPoster`, choose the source by mode: `poster.src = (config.scrub?.mode === 'video') ? config.video.poster : config.frames.poster;`
+In `loadPoster`, choose the source with Task 1's helper: `poster.src = selectScrubMode(config) === 'video' ? config.video.poster : config.frames.poster;`
 
 In `start()`, replace the final `runEngine(config, overlayNodes);` with:
 
 ```js
-  if ((config.scrub.mode ?? 'frames') === 'video') {
+  if (selectScrubMode(config) === 'video') {
     let video;
     try {
       video = await loadScrubVideo(config);
@@ -360,7 +400,7 @@ In `start()`, replace the final `runEngine(config, overlayNodes);` with:
 
 Extend the localhost debug object with `get videoTime() { return document.getElementById('scrub-video')?.currentTime ?? 0; }`.
 
-- [ ] **Step 4: Browser test.** Read `tests/browser/fixture-server.mjs` to see how the frames fixture site is assembled. Add a video-mode fixture: generate a tiny all-intra **VP9 webm** at setup (Playwright's Chromium has no H.264, so the test fixture uses webm; production uses mp4):
+**Browser fixture/test details for Steps 1–2.** Read `tests/browser/fixture-server.mjs` to see how the frames fixture site is assembled. Add a video-mode fixture: generate a tiny all-intra **VP9 webm** at setup (Playwright's Chromium has no H.264, so the test fixture uses webm; production uses mp4):
 
 ```
 ffmpeg -hide_banner -loglevel error -y -f lavfi -i testsrc=duration=2:size=320x180:rate=12 -c:v libvpx-vp9 -g 1 -crf 40 -b:v 0 media/video.webm
@@ -382,21 +422,23 @@ test('video mode scrubs the video with scroll', async ({ page }) => {
 });
 ```
 
-- [ ] **Step 5: Run** `npx playwright test` — expect PASS (both modes).
+Add a phone-viewport scenario (`390x844`, `hasTouch: true`) using the same media assets. Assert that the page has no horizontal overflow, the visible CTA has a hit area of at least 44x44 CSS pixels, overlay text remains inside the viewport, and scrolling advances video time. Add a resize assertion showing a height-only viewport change does not reset progress. Update responsive CSS with `env(safe-area-inset-*)`, mobile overlay width/position rules, and reduced decorative effects as needed to make the test pass; do not add portrait-specific media paths.
 
-- [ ] **Step 6: Commit** — `git add template/ tests/browser/ && git commit -m "feat: video seek-scrub playback mode"`
+- [ ] **Step 6: Run** `npx playwright test` — expect PASS for frames, video, reduced-motion, and phone-viewport scenarios.
+
+- [ ] **Step 7: Commit** — `git add template/ tests/browser/ && git commit -m "feat: add responsive video seek-scrub playback"`
 
 ---
 
-### Task 4: `reencode-video.mjs` — all-intra re-encode + poster + payload report
+### Task 4: `reencode-video.mjs` — balanced small-GOP encode + all-intra option
 
 **Files:**
 - Create: `scripts/reencode-video.mjs`
 - Test: `tests/unit/reencode-video.test.mjs`
 
 **Interfaces:**
-- Consumes: `runFfprobe`, `videoVerdict` from `scripts/validate-media.mjs`; `MID_4G_BYTES_PER_SECOND`, `REQUEST_OVERHEAD_SECONDS` from `scripts/extract-frames.mjs`; `hasFlag`, `isDirect` from `scripts/lib/cli.mjs`; `pathExists` from `scripts/lib/files.mjs`.
-- Produces: CLI `reencode-video <input> <outDir> [--crf 10..40=23] [--width 16..8192=1600] [--poster-at seconds=0] [--force]`; writes `<outDir>/video.mp4` (h264, `-g 1`, faststart), `<outDir>/poster.webp`, `<outDir>/media.json` (`{ duration, width, height }`); prints JSON summary `{ videoBytes, posterBytes, duration, width, height, estimatedSeconds }`. Exports `parseReencodeArgs(argv)`, `buildReencodeArgs(options)`, `buildPosterArgs(options)`, `main(argv, io, runner)`.
+- Consumes: `runFfprobe`, `videoVerdict`; payload constants from `extract-frames.mjs`; CLI helpers; and `pathExists`, `replaceDirectory`, `writeJsonAtomic` from `scripts/lib/files.mjs`.
+- Produces: CLI `reencode-video <input> <outDir> [--crf 10..40=23] [--width 16..8192=1600] [--gop 1..120=8|--all-intra] [--poster-at seconds=0] [--force]`; writes H.264 faststart media, poster, and `media.json` with `{ duration, width, height, crf, gop }`; prints payload size and mid-4G estimate. Exports `parseReencodeArgs`, ffmpeg argument builders, and `main`.
 
 - [ ] **Step 1: Write failing tests** in `tests/unit/reencode-video.test.mjs` (mirror the style of `tests/unit/extract-frames.test.mjs` — fake `runner`, fake `io` collecting lines; read that file first and reuse its helpers/pattern):
 
@@ -411,7 +453,8 @@ import {
 describe('parseReencodeArgs', () => {
   it('applies defaults', () => {
     expect(parseReencodeArgs(['in.mp4', 'out'])).toEqual({
-      input: 'in.mp4', outDir: 'out', crf: 23, width: 1600, posterAt: 0, force: false,
+      input: 'in.mp4', outDir: 'out', crf: 23, width: 1600,
+      gop: 8, posterAt: 0, force: false,
     });
   });
   it('rejects out-of-range crf', () => {
@@ -423,14 +466,20 @@ describe('parseReencodeArgs', () => {
 });
 
 describe('buildReencodeArgs', () => {
-  it('encodes all-intra h264 with faststart', () => {
-    const args = buildReencodeArgs({ input: 'in.mp4', width: 1280, crf: 20, output: 'out/video.mp4' });
+  it('encodes small-GOP h264 with faststart', () => {
+    const args = buildReencodeArgs({
+      input: 'in.mp4', width: 1280, crf: 20, gop: 8, output: 'out/video.mp4',
+    });
     expect(args).toContain('-g');
-    expect(args[args.indexOf('-g') + 1]).toBe('1');
+    expect(args[args.indexOf('-g') + 1]).toBe('8');
+    expect(args[args.indexOf('-keyint_min') + 1]).toBe('8');
     expect(args).toContain('+faststart');
     expect(args[args.indexOf('-crf') + 1]).toBe('20');
     expect(args[args.indexOf('-vf') + 1]).toContain('scale=1280:-2');
     expect(args.at(-1)).toBe('out/video.mp4');
+  });
+  it('uses GOP 1 only for the explicit all-intra preset', () => {
+    expect(parseReencodeArgs(['in.mp4', 'out', '--all-intra']).gop).toBe(1);
   });
 });
 
@@ -443,6 +492,8 @@ describe('buildPosterArgs', () => {
   });
 });
 ```
+
+Also test `main` with fake `io`/`runner`: missing input returns 1; ffprobe/ffmpeg failure returns 2; success emits the JSON report; and a failed forced run preserves a pre-existing output directory byte-for-byte.
 
 - [ ] **Step 2: Run to verify failure** — `npx vitest run tests/unit/reencode-video.test.mjs` — expect FAIL (module not found).
 
@@ -477,10 +528,10 @@ function bounded(value, name, minimum, maximum) {
 export function parseReencodeArgs(argv) {
   const positional = [];
   const values = new Map();
-  const valueFlags = new Set(['--crf', '--width', '--poster-at']);
+  const valueFlags = new Set(['--crf', '--width', '--gop', '--poster-at']);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === '--force') continue;
+    if (argument === '--force' || argument === '--all-intra') continue;
     if (argument.startsWith('--')) {
       if (!valueFlags.has(argument)) throw new Error('Unknown option: ' + argument);
       if (index === argv.length - 1) throw new Error('Missing value for ' + argument);
@@ -499,6 +550,9 @@ export function parseReencodeArgs(argv) {
     outDir: positional[1],
     crf: Math.round(bounded(values.get('--crf') ?? '23', 'crf', 10, 40)),
     width: Math.round(bounded(values.get('--width') ?? '1600', 'width', 16, 8192)),
+    gop: hasFlag(argv, '--all-intra')
+      ? 1
+      : Math.round(bounded(values.get('--gop') ?? '8', 'gop', 1, 120)),
     posterAt: bounded(values.get('--poster-at') ?? '0', 'poster-at', 0, 3600),
     force: hasFlag(argv, '--force'),
   };
@@ -511,7 +565,7 @@ export function buildReencodeArgs(options) {
     '-an',
     '-vf', 'scale=' + options.width + ':-2:flags=lanczos',
     '-c:v', 'libx264', '-preset', 'medium', '-crf', String(options.crf),
-    '-g', '1',
+    '-g', String(options.gop), '-keyint_min', String(options.gop), '-sc_threshold', '0',
     '-pix_fmt', 'yuv420p',
     '-movflags', '+faststart',
     options.output,
@@ -541,7 +595,7 @@ export async function main(argv = process.argv.slice(2), io = console, runner = 
     options = parseReencodeArgs(argv);
   } catch (error) {
     if (argv.length > 0) io.error(firstLine(error));
-    io.error('Usage: reencode-video <input> <output-dir> [--crf N] [--width N] [--poster-at S] [--force]');
+    io.error('Usage: reencode-video <input> <output-dir> [--crf N] [--width N] [--gop N|--all-intra] [--poster-at S] [--force]');
     return 1;
   }
 
@@ -578,7 +632,9 @@ export async function main(argv = process.argv.slice(2), io = console, runner = 
       return 2;
     }
     const { duration, width, height } = outVerdict.metadata;
-    await writeJsonAtomic(join(outDir, 'media.json'), { duration, width, height });
+    await writeJsonAtomic(join(outDir, 'media.json'), {
+      duration, width, height, crf: options.crf, gop: options.gop,
+    });
 
     const [videoStat, posterStat] = await Promise.all([stat(videoOut), stat(posterOut)]);
     io.log(JSON.stringify({
@@ -604,11 +660,13 @@ if (isDirect(import.meta.url)) {
 
 Note: check `videoVerdict`'s metadata shape in `scripts/validate-media.mjs` before wiring `{ duration, width, height }` — use its actual field names.
 
+Do not write directly into the live output directory. Create a sibling `.media.tmp-<uuid>` directory, write and validate all three files there, then call `replaceDirectory(prepared, outDir, options.force)`. Always remove the prepared path in `finally`. This is the same transaction pattern used by `extract-frames.mjs`; read its complete replacement/rollback block before implementing.
+
 - [ ] **Step 4: Run tests** — `npx vitest run tests/unit/reencode-video.test.mjs` — expect PASS.
 
 - [ ] **Step 5: End-to-end sanity** (real ffmpeg): `node scripts/reencode-video.mjs "C:\Users\ryanl\desktop\scrolltest\scrollcar\input\video.mp4" "C:\Users\ryanl\AppData\Local\Temp\claude\reencode-check" --width 640` — expect a JSON summary and three files in the output dir. Delete the temp dir afterwards.
 
-- [ ] **Step 6: Commit** — `git add scripts/reencode-video.mjs tests/unit/reencode-video.test.mjs && git commit -m "feat: reencode-video script (all-intra scrub encode + poster + payload report)"`
+- [ ] **Step 6: Commit** — `git add scripts/reencode-video.mjs tests/unit/reencode-video.test.mjs && git commit -m "feat: add balanced scrub-video encoding presets"`
 
 ---
 
@@ -620,7 +678,7 @@ Note: check `videoVerdict`'s metadata shape in `scripts/validate-media.mjs` befo
 
 **Interfaces:**
 - Consumes: v2 `validateConfig` (Task 1); `media/` layout from Task 4 (`video.mp4`, `poster.webp`, `media.json`).
-- Produces: when `values.scrub?.mode === 'video'`, scaffold stages `<project>/media` (fresh) or `<project>/site/media` (inherited) into the new site, reads `media.json` for duration, and `assembleConfig(defaults, values, frameSet, mediaSet)` emits `config.video = { src: 'media/video.mp4', poster: 'media/poster.webp', duration }` with no `frames` block. Frames mode behavior unchanged.
+- Produces: explicit `values.scrub.mode` wins; otherwise a valid project/inherited `media/media.json` selects video and frames select frames. `assembleConfig(defaults, values, frameSet, mediaSet)` emits the matching config and preserves transactional rollback for either asset directory.
 
 - [ ] **Step 1: Write failing tests** (append to `tests/unit/scaffold-site.test.mjs`; read the file first and reuse its temp-project helpers):
 
@@ -716,12 +774,16 @@ export function assembleConfig(defaults, values, frameSet, mediaSet = null) {
 In `scaffoldProject`, read `values.json` **before** the frames handling (move the `readJsonFile` calls up, before the frames branch), then:
 
 ```js
-    const videoMode = values.scrub?.mode === 'video';
+    const projectMediaPath = join(projectDir, 'media');
+    const inheritedMediaPath = join(sitePath, 'media');
+    const mediaAvailable = await pathExists(projectMediaPath)
+      || await pathExists(inheritedMediaPath);
+    const videoMode = values.scrub?.mode === 'video'
+      || (values.scrub?.mode == null && mediaAvailable);
     let frameSet = null;
     let mediaSet = null;
     let framesSource;
     if (videoMode) {
-      const projectMediaPath = join(projectDir, 'media');
       if (await pathExists(projectMediaPath)) {
         await rename(projectMediaPath, join(siteTmpPath, 'media'));
         framesSource = 'fresh';
@@ -744,7 +806,22 @@ In `scaffoldProject`, read `values.json` **before** the frames handling (move th
       }
       mediaSet = mediaInfo;
     } else {
-      // …existing frames staging block, unchanged…
+      const projectFramesPath = join(projectDir, 'frames');
+      if (await pathExists(projectFramesPath)) {
+        await rename(projectFramesPath, join(siteTmpPath, 'frames'));
+        freshFramesMoved = true;
+        framesSource = 'fresh';
+      } else {
+        const liveFramesPath = join(sitePath, 'frames');
+        if (!await pathExists(liveFramesPath)) {
+          throw new Error(
+            'No frames available: run extraction into project/frames, '
+            + 'or scaffold over an existing site that already has frames.',
+          );
+        }
+        await cp(liveFramesPath, join(siteTmpPath, 'frames'), { recursive: true });
+        framesSource = 'inherited';
+      }
       frameSet = await inspectFrameSet(join(siteTmpPath, 'frames'));
     }
 ```
@@ -765,16 +842,19 @@ Mirror the frames rollback in the `catch`: if the fresh `media` dir was moved an
 
 **Interfaces:**
 - Consumes: `values.scrub.mode` convention (Task 5).
-- Produces: `GATES = ['brief', 'storyboard', 'stills-preview', 'video', 'extraction', 'theme', 'preview']`; skip rules — `storyboard` skipped when no keyframe prompts and `prompts/video.txt` exists (old rule, renamed), `stills-preview` skipped when `input/video.mp4` exists, `extraction` skipped when `values.scrub?.mode === 'video'`; legacy `keyframes` receipts count as `storyboard`; `keyframe-beat-N.txt` prompts/roles accepted; resume step numbering 1–7 (all-done = 8).
+- Produces: the seven v2 gates; storyboard receipts include approved overlay fields; stills-preview hashes stable frames + storyboard projection rather than the mutable site; extraction hashes frames or encoded media and is never skipped; `video` skips only when `values.generation.video === false`; stills-preview skips only for legacy projects that have video but no beat prompts; legacy `keyframes` receipts count as storyboard; all-done resume step is 8.
 
 - [ ] **Step 1: Write failing tests** (append to `tests/unit/status.test.mjs`; read it first — it builds temp projects and fake `inspect` functions; reuse those helpers):
 
 Cases to add:
 1. `GATES` equals the v2 list in order.
-2. A project with a legacy `approvals.json` using key `keyframes` (valid hash chain built the v1 way) plus `input/video.mp4` present resolves with `storyboard` **not** in `unapproved` (legacy receipt honored, stills-preview skipped).
-3. A project with `values.json` containing `"scrub": {"mode": "video"}` and no `frames/` dir reports `extraction` as skipped (not in `unapproved`, and `resolveResume` does not stall on it).
+2. A project with a legacy `approvals.json` using key `keyframes` plus `input/video.mp4` and no beat prompts honors the receipt and skips only `stills-preview`.
+3. A video-mode project with `media/video.mp4`, `media/poster.webp`, and `media/media.json` produces an extraction manifest and requires extraction approval.
 4. `prompts/keyframe-beat-1.txt` + `input/keyframes/beat-1.png` produce a complete storyboard manifest; a missing `beat-2.png` for an existing `keyframe-beat-2.txt` appears as `storyboard:beat-2` in `incomplete`.
 5. All-approved v2 project resolves `resumeStep === 8`.
+6. Changing storyboard overlay copy/position/timing invalidates storyboard; changing only theme does not.
+7. Rebuilding/theme-changing `site/` does not invalidate stills-preview when beat frames and storyboard projection are unchanged.
+8. `values.generation.video === false` skips video but still requires extraction from beat frames.
 
 - [ ] **Step 2: Run to verify failure** — `npx vitest run tests/unit/status.test.mjs` — expect FAIL.
 
@@ -804,19 +884,44 @@ function roleRank(role) {
 
 (sort by `roleRank(left.role) - roleRank(right.role)`).
 
-`buildGateManifest`: rename the `keyframes` branch to `storyboard` (body unchanged); make the site-files fallback serve both preview gates explicitly:
+Extend `valuesProjection` before changing manifests:
 
 ```js
-  if (gate === 'stills-preview' || gate === 'preview') {
-    const siteFiles = await regularFilesRecursive(join(projectDir, 'site'), inspect);
-    if (!siteFiles.length) return null;
-    return sortManifestEntries(await hashFiles(siteFiles, 'site'));
+  if (gate === 'storyboard') {
+    return (values.overlays ?? []).map((overlay) => ({
+      title: overlay.title ?? null,
+      body: overlay.body ?? null,
+      stats: overlay.stats ?? [],
+      cta: overlay.cta ?? null,
+      position: overlay.position ?? null,
+      at: overlay.at ?? null,
+      hold: Boolean(overlay.hold),
+    }));
   }
 ```
 
+`buildGateManifest`: rename the `keyframes` branch to `storyboard`, keep prompt/image hashing, and append `values.json#storyboard` using the canonical projection. Implement stable preview and dual extraction manifests:
+
+```js
+  if (gate === 'stills-preview') {
+    const frames = await regularFilesRecursive(join(projectDir, 'frames'), inspect);
+    const values = await readJsonObject(valuesPath, 'values.json');
+    if (!frames.length || !values) return null;
+    return sortManifestEntries([
+      ...await hashFiles(frames, 'frames'),
+      {
+        path: 'values.json#storyboard',
+        sha256: sha256Text(canonicalJson(valuesProjection(values, 'storyboard'))),
+      },
+    ]);
+  }
+```
+
+For `extraction`, prefer project `media/`, then site `media/`, and hash every regular media file when present. Otherwise retain the frames manifest plus extraction projection. Leave the final `preview` fallback as the complete `site/` tree.
+
 `buildInventory` additions:
 - `const videoFileExists = await regularFileExists(join(projectDir, 'input', 'video.mp4'), inspect);`
-- Read values once: `const values = await readJsonObject(paths.values, 'values.json').catch(() => null);` and `const scrubMode = values?.scrub?.mode ?? 'frames';`
+- Read values once and return `videoEnabled: values?.generation?.video !== false` plus `scrubMode: values?.scrub?.mode ?? (media exists ? 'video' : 'frames')`.
 - Legacy receipt mapping right after reading `approvals.json`:
 
 ```js
@@ -843,15 +948,17 @@ function roleRank(role) {
 (add `projectMediaOutrunSite` to the existing `stale.push('site')` condition).
 - Return the new facts: `videoFileExists`, `scrubMode`; change the incomplete prefix to `'storyboard:' + role`.
 
-Skip predicates (replace `keyframesSkipped`):
+Skip predicates (replace `keyframesSkipped`; extraction is deliberately absent):
 
 ```js
 function gateSkipped(gate, inventory) {
   if (gate === 'storyboard') {
     return inventory.keyframePromptCount === 0 && inventory.videoPromptExists;
   }
-  if (gate === 'stills-preview') return inventory.videoFileExists;
-  if (gate === 'extraction') return inventory.scrubMode === 'video';
+  if (gate === 'stills-preview') {
+    return inventory.keyframePromptCount === 0 && inventory.videoFileExists;
+  }
+  if (gate === 'video') return !inventory.videoEnabled;
   return false;
 }
 ```
@@ -873,13 +980,13 @@ function stepFor(item) {
 }
 ```
 
-All-done resume becomes `8` (the `finish(actionableSteps.length ? … : 7, …)` literal changes to `8`).
+All-done resume becomes `8`: `return finish(actionableSteps.length ? Math.min(...actionableSteps) : 8, inventory, unapproved);`.
 
 - [ ] **Step 4: Run tests** — `npx vitest run tests/unit/status.test.mjs` — expect PASS. Then run the whole unit suite `npx vitest run` — other suites (e.g. `tests/integration/pipeline.test.mjs`, `tests/skill/*`) may reference gate names or step numbers; update any that assert `keyframes`/6-gate numbering to the v2 names, keeping the legacy-receipt test intact.
 
 - [ ] **Step 5: Real-project sanity** — `node scripts/status.mjs "C:\Users\ryanl\desktop\scrolltest\scrollcar" --json` — expect the v1 project to resolve without demanding re-approval of brief/storyboard/video/extraction (its receipts were written under v1 names; `stills-preview` must show as skipped because `input/video.mp4` exists).
 
-- [ ] **Step 6: Commit** — `git add scripts/status.mjs tests/ && git commit -m "feat: v2 gates (storyboard, stills-preview, video-mode extraction skip, v1 receipts)"`
+- [ ] **Step 6: Commit** — `git add scripts/status.mjs tests/ && git commit -m "feat: add stable v2 gate receipts with v1 compatibility"`
 
 ---
 
@@ -915,6 +1022,8 @@ describe('planBeats', () => {
   });
 });
 ```
+
+Add `main` tests using fake `io`/`runner`: missing directory returns 1; a conversion failure returns 2 and preserves an existing `frames/` directory; success invokes ffmpeg once per ordered beat, emits the standard JSON summary, and atomically replaces frames only after validation.
 
 - [ ] **Step 2: Run to verify failure** — `npx vitest run tests/unit/stills-to-frames.test.mjs`.
 
@@ -1059,14 +1168,414 @@ Note: check `replaceDirectory`'s signature in `scripts/lib/files.mjs` first (ext
 
 ---
 
-### Task 8: SKILL.md v2 workflow
+### Task 8: Adaptive beats and capability-filtered provider planning
+
+**Files:**
+- Create: `scripts/lib/generation.mjs`
+- Create: `scripts/plan-generation.mjs`
+- Test: `tests/unit/generation.test.mjs`, `tests/unit/plan-generation.test.mjs`
+- Modify: `package.json`
+
+**Interfaces:**
+- Produces the pure helpers plus CLI `plan-generation beats ...` and `plan-generation routes <routes.json> ...`. Provider routes and prices are runtime JSON inputs and are never hard-coded.
+
+- [ ] **Step 1: Write failing tests**
+
+```js
+import { describe, expect, it } from 'vitest';
+import {
+  estimateRouteCost,
+  filterProviderRoutes,
+  rankProviderRoutes,
+  recommendBeatCount,
+} from '../../scripts/lib/generation.mjs';
+
+describe('recommendBeatCount', () => {
+  it('maps simple, normal, dense, and catalog use cases into 3..10 beats', () => {
+    expect(recommendBeatCount({ claimCount: 1, sectionCount: 2 })).toBe(3);
+    expect(recommendBeatCount({ claimCount: 4, sectionCount: 5 })).toBe(5);
+    expect(recommendBeatCount({ claimCount: 6, sectionCount: 6, hasProcess: true })).toBe(7);
+    expect(recommendBeatCount({ claimCount: 9, sectionCount: 8, catalogItems: 12 })).toBe(10);
+  });
+  it('rejects negative/non-integer counts', () => {
+    expect(() => recommendBeatCount({ claimCount: -1, sectionCount: 2 })).toThrow(/claimCount/);
+  });
+});
+
+describe('provider planning', () => {
+  const routes = [
+    { id: 'none', available: true, costMicros: 0, noVideo: true, quality: 0, speed: 3 },
+    { id: 'cheap', available: true, costMicros: 240000, durations: [8], resolutions: ['720p'], firstFrame: true, lastFrame: true, maxReferences: 2, quality: 1, speed: 3 },
+    { id: 'quality', available: true, costMicros: 1600000, durations: [8], resolutions: ['1080p'], firstFrame: true, lastFrame: true, maxReferences: 3, quality: 3, speed: 1 },
+    { id: 'missing', available: false, costMicros: 100000 },
+  ];
+  it('filters unavailable, over-budget, and capability-incompatible routes', () => {
+    const result = filterProviderRoutes(routes, {
+      budgetMicros: 500000, duration: 8, resolution: '720p', firstLast: true,
+    });
+    expect(result.eligible.map((route) => route.id)).toEqual(['none', 'cheap']);
+    expect(result.excluded.map((item) => item.id)).toEqual(['quality', 'missing']);
+  });
+  it('ranks cheapest by cost and quality-first by quality', () => {
+    expect(rankProviderRoutes(routes.slice(0, 3), 'cheapest')[0].id).toBe('none');
+    expect(rankProviderRoutes(routes.slice(0, 3), 'quality-first')[0].id).toBe('quality');
+  });
+  it('estimates integer micro-unit costs', () => {
+    expect(estimateRouteCost(30000, 8)).toBe(240000);
+  });
+});
+```
+
+- [ ] **Step 2: Run to verify failure** — `npx vitest run tests/unit/generation.test.mjs` — expect module-not-found failure.
+
+- [ ] **Step 3: Implement the pure module**
+
+```js
+const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
+
+function count(value, name) {
+  const normalized = value ?? 0;
+  if (!Number.isInteger(normalized) || normalized < 0) {
+    throw new Error(name + ' must be a non-negative integer.');
+  }
+  return normalized;
+}
+
+export function recommendBeatCount(input = {}) {
+  const claimCount = count(input.claimCount, 'claimCount');
+  const sectionCount = count(input.sectionCount, 'sectionCount');
+  const catalogItems = count(input.catalogItems, 'catalogItems');
+  const density = Math.max(claimCount, sectionCount)
+    + (input.hasProcess ? 1 : 0)
+    + Math.min(2, Math.ceil(catalogItems / 6));
+  if (density <= 2) return 3;
+  if (density <= 5) return 5;
+  if (density <= 7) return 7;
+  return clamp(density, 8, 10);
+}
+
+export function estimateRouteCost(rateMicrosPerSecond, durationSeconds) {
+  if (!Number.isInteger(rateMicrosPerSecond) || rateMicrosPerSecond < 0) {
+    throw new Error('rateMicrosPerSecond must be a non-negative integer.');
+  }
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    throw new Error('durationSeconds must be positive.');
+  }
+  return Math.ceil(rateMicrosPerSecond * durationSeconds);
+}
+
+function exclusionReasons(route, requirements) {
+  const reasons = [];
+  if (!route.available) reasons.push('unavailable');
+  if (!route.noVideo && route.costMicros > requirements.budgetMicros) reasons.push('over-budget');
+  if (!route.noVideo && requirements.duration && !route.durations?.includes(requirements.duration)) reasons.push('duration');
+  if (!route.noVideo && requirements.resolution && !route.resolutions?.includes(requirements.resolution)) reasons.push('resolution');
+  if (!route.noVideo && requirements.firstLast && !(route.firstFrame && route.lastFrame)) reasons.push('first-last');
+  if (!route.noVideo && requirements.referenceCount > (route.maxReferences ?? 0)) reasons.push('references');
+  return reasons;
+}
+
+export function filterProviderRoutes(routes, requirements) {
+  const eligible = [];
+  const excluded = [];
+  for (const route of routes) {
+    const reasons = exclusionReasons(route, requirements);
+    if (reasons.length) excluded.push({ id: route.id, reasons });
+    else eligible.push(route);
+  }
+  return { eligible, excluded };
+}
+
+export function rankProviderRoutes(routes, preset) {
+  const score = (route) => {
+    if (preset === 'free' || preset === 'cheapest') return -route.costMicros;
+    if (preset === 'quality-first') return route.quality * 1e9 - route.costMicros;
+    return route.quality * 1e8 + route.speed * 1e7
+      + (route.firstFrame ? 1e6 : 0) + (route.lastFrame ? 1e6 : 0)
+      + (route.maxReferences ?? 0) * 1e5 - route.costMicros;
+  };
+  return [...routes].sort((left, right) => score(right) - score(left)
+    || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+}
+```
+
+- [ ] **Step 4: Run tests** — `npx vitest run tests/unit/generation.test.mjs` — expect PASS.
+
+- [ ] **Step 5: Write the failing CLI tests** — `beats --claims 4 --sections 5` prints recommendation 5; `routes` reads a temp runtime routes file, filters unavailable/over-budget entries, ranks eligible routes for the selected preset, and prints excluded reasons; malformed JSON returns 2; invalid flags return 1.
+
+- [ ] **Step 6: Run to verify failure** — `npx vitest run tests/unit/plan-generation.test.mjs` — expect module-not-found failure.
+
+- [ ] **Step 7: Implement `scripts/plan-generation.mjs`** using exported `main(argv, io)` and the standard `isDirect` guard. Exact commands:
+
+```text
+plan-generation beats --claims N --sections N [--process] [--catalog N]
+plan-generation routes <routes.json> --budget-micros N --preset free|cheapest|balanced|quality-first --duration N --resolution VALUE [--first-last] [--references N]
+```
+
+Use this command boundary around the Task 8 helpers:
+
+```js
+export async function main(argv = process.argv.slice(2), io = console) {
+  const command = argv[0];
+  try {
+    if (command === 'beats') {
+      const beatCount = recommendBeatCount({
+        claimCount: integerFlag(argv, '--claims'),
+        sectionCount: integerFlag(argv, '--sections'),
+        hasProcess: argv.includes('--process'),
+        catalogItems: optionalIntegerFlag(argv, '--catalog', 0),
+      });
+      io.log(JSON.stringify({ beatCount }, null, 2));
+      return 0;
+    }
+    if (command !== 'routes' || !argv[1] || argv[1].startsWith('--')) {
+      io.error(USAGE);
+      return 1;
+    }
+    let routes;
+    try {
+      routes = JSON.parse(await readFile(resolve(argv[1]), 'utf8'));
+    } catch (error) {
+      io.error('Could not read routes: ' + String(error?.message ?? error));
+      return 2;
+    }
+    if (!Array.isArray(routes)) throw new Error('Routes file must contain an array.');
+    const requirements = {
+      budgetMicros: integerFlag(argv, '--budget-micros'),
+      duration: numericFlag(argv, '--duration'),
+      resolution: valueAfter(argv, '--resolution'),
+      firstLast: argv.includes('--first-last'),
+      referenceCount: optionalIntegerFlag(argv, '--references', 0),
+    };
+    const preset = valueAfter(argv, '--preset');
+    const { eligible, excluded } = filterProviderRoutes(routes, requirements);
+    const ranked = rankProviderRoutes(eligible, preset);
+    io.log(JSON.stringify({ recommended: ranked[0] ?? null, eligible: ranked, excluded }, null, 2));
+    return 0;
+  } catch (error) {
+    io.error(String(error?.message ?? error));
+    return 1;
+  }
+}
+```
+
+Define `integerFlag`, `optionalIntegerFlag`, and `numericFlag` beside `USAGE` using `valueAfter`; each rejects missing, negative, or non-numeric values. Import `readFile`, `resolve`, `isDirect`, and the Task 8 helpers, then add the standard direct guard. Add `scroll-wizard-plan-generation` to `package.json#bin` and its path to package enumeration tests.
+
+- [ ] **Step 8: Run tests** — `npx vitest run tests/unit/generation.test.mjs tests/unit/plan-generation.test.mjs tests/unit/package.test.mjs` — expect PASS.
+
+- [ ] **Step 9: Commit** — `git add scripts/lib/generation.mjs scripts/plan-generation.mjs tests/unit/generation.test.mjs tests/unit/plan-generation.test.mjs tests/unit/package.test.mjs package.json && git commit -m "feat: add adaptive beat and provider planning"`
+
+---
+
+### Task 9: Durable hard-cap budget ledger
+
+**Files:**
+- Create: `scripts/budget.mjs`
+- Test: `tests/unit/budget.test.mjs`
+- Modify: `package.json`
+
+**Interfaces:**
+- Produces CLI commands `budget <project> init|status|reserve|settle|unknown|raise-cap`; persists `budget.json` atomically. All money is integer micro-units (`1 USD = 1_000_000`) to support sub-cent quotes. Exports `createBudget`, `budgetTotals`, `reserveTransaction`, `settleTransaction`, `markTransactionUnknown`, `raiseBudgetCap`, and `main`.
+
+- [ ] **Step 1: Write failing tests**
+
+```js
+import { describe, expect, it } from 'vitest';
+import {
+  budgetTotals, createBudget, markTransactionUnknown,
+  raiseBudgetCap, reserveTransaction, settleTransaction,
+} from '../../scripts/budget.mjs';
+
+describe('budget ledger', () => {
+  it('reserves quoted cost and blocks calls over the hard cap', () => {
+    const ledger = createBudget({ currency: 'USD', preset: 'balanced', capMicros: 1_000_000 });
+    const reserved = reserveTransaction(ledger, {
+      id: 'video-1', kind: 'video', provider: 'verified', model: 'm',
+      quotedMicros: 800_000, promptPath: 'prompts/video.txt',
+    }, '2026-07-18T00:00:00.000Z');
+    expect(budgetTotals(reserved).remainingMicros).toBe(200_000);
+    expect(() => reserveTransaction(reserved, {
+      id: 'reroll-1', kind: 'reroll', provider: 'verified', model: 'm', quotedMicros: 300_000,
+    })).toThrow(/hard cap/);
+  });
+  it('settles actual cost and retains unknown reservations', () => {
+    const ledger = reserveTransaction(
+      createBudget({ currency: 'USD', preset: 'cheapest', capMicros: 1_000_000 }),
+      { id: 'still-1', kind: 'still', provider: 'p', model: 'm', quotedMicros: 200_000 },
+    );
+    expect(budgetTotals(settleTransaction(ledger, 'still-1', 150_000)).spentMicros).toBe(150_000);
+    expect(budgetTotals(markTransactionUnknown(ledger, 'still-1')).reservedMicros).toBe(200_000);
+  });
+  it('requires an explicit strictly higher cap', () => {
+    const ledger = createBudget({ currency: 'USD', preset: 'free', capMicros: 0 });
+    expect(raiseBudgetCap(ledger, 500_000, 'cheapest')).toMatchObject({
+      capMicros: 500_000, preset: 'cheapest',
+    });
+    expect(() => raiseBudgetCap(ledger, 0)).toThrow(/higher/);
+  });
+});
+```
+
+Add `main` tests with temp projects and fake `io`: Free init rejects a positive paid allocation; reserve persists atomically; duplicate IDs fail; `unknown` must be reconciled before reuse; failed writes leave the previous ledger valid; exit code is 1 for usage/validation and 2 for runtime I/O failure.
+
+- [ ] **Step 2: Run to verify failure** — `npx vitest run tests/unit/budget.test.mjs` — expect module-not-found failure.
+
+- [ ] **Step 3: Implement ledger transitions**
+
+```js
+export function budgetTotals(ledger) {
+  const spentMicros = ledger.transactions
+    .filter((item) => item.status === 'settled')
+    .reduce((sum, item) => sum + item.actualMicros, 0);
+  const reservedMicros = ledger.transactions
+    .filter((item) => ['reserved', 'unknown'].includes(item.status))
+    .reduce((sum, item) => sum + item.quotedMicros, 0);
+  return {
+    quotedMicros: ledger.transactions.reduce((sum, item) => sum + item.quotedMicros, 0),
+    reservedMicros,
+    spentMicros,
+    remainingMicros: ledger.capMicros - spentMicros - reservedMicros,
+  };
+}
+
+export function createBudget({ currency = 'USD', preset, capMicros, allocations = {} }) {
+  if (!['free', 'cheapest', 'balanced', 'quality-first'].includes(preset)) throw new Error('Invalid preset.');
+  if (!Number.isInteger(capMicros) || capMicros < 0) throw new Error('capMicros must be a non-negative integer.');
+  if (preset === 'free' && capMicros !== 0) throw new Error('Free preset cap must be zero.');
+  return { version: 1, currency, preset, capMicros, allocations, transactions: [] };
+}
+
+export function reserveTransaction(ledger, transaction, timestamp = new Date().toISOString()) {
+  if (ledger.transactions.some((item) => item.id === transaction.id)) throw new Error('Duplicate transaction id.');
+  if (!Number.isInteger(transaction.quotedMicros) || transaction.quotedMicros < 0) throw new Error('quotedMicros must be a non-negative integer.');
+  if (transaction.quotedMicros > budgetTotals(ledger).remainingMicros) throw new Error('Reservation exceeds hard cap.');
+  return { ...ledger, transactions: [...ledger.transactions, { ...transaction, status: 'reserved', timestamp }] };
+}
+
+export function settleTransaction(ledger, id, actualMicros, timestamp = new Date().toISOString()) {
+  if (!Number.isInteger(actualMicros) || actualMicros < 0) throw new Error('actualMicros must be a non-negative integer.');
+  const target = ledger.transactions.find((item) => item.id === id);
+  if (!target || !['reserved', 'unknown'].includes(target.status)) throw new Error('Transaction is not reservable.');
+  if (actualMicros > target.quotedMicros) throw new Error('Actual cost exceeds approved quote; reconcile manually.');
+  return { ...ledger, transactions: ledger.transactions.map((item) => item.id === id
+    ? { ...item, status: 'settled', actualMicros, settledAt: timestamp }
+    : item) };
+}
+
+export function markTransactionUnknown(ledger, id) {
+  if (!ledger.transactions.some((item) => item.id === id)) throw new Error('Unknown transaction id.');
+  return { ...ledger, transactions: ledger.transactions.map((item) => item.id === id
+    ? { ...item, status: 'unknown' }
+    : item) };
+}
+
+export function raiseBudgetCap(ledger, capMicros, preset = ledger.preset) {
+  if (!Number.isInteger(capMicros) || capMicros <= ledger.capMicros) throw new Error('New cap must be a higher integer amount.');
+  if (preset === 'free') throw new Error('Raising a Free budget requires a paid preset.');
+  return { ...ledger, capMicros, preset };
+}
+```
+
+Add the standard imports (`readFile`, `join`, `resolve`, `isDirect`, `valueAfter`, `writeJsonAtomic`) and this CLI boundary. Money flags are integer micros only, so no floating-point conversion occurs:
+
+```js
+const USAGE = 'Usage: budget <project> init|status|reserve|settle|unknown|raise-cap [options]';
+const required = (argv, flag) => valueAfter(argv, flag);
+const integer = (argv, flag) => {
+  const raw = required(argv, flag);
+  if (!/^\d+$/.test(raw)) throw new Error(flag + ' must be a non-negative integer.');
+  return Number(raw);
+};
+const optional = (argv, flag, fallback = null) => (
+  argv.includes(flag) ? required(argv, flag) : fallback
+);
+
+async function readLedger(path) {
+  const ledger = JSON.parse(await readFile(path, 'utf8'));
+  if (ledger?.version !== 1 || !Array.isArray(ledger.transactions)) {
+    throw new Error('budget.json has an unsupported shape.');
+  }
+  return ledger;
+}
+
+export async function main(argv = process.argv.slice(2), io = console) {
+  const projectDir = argv[0];
+  const command = argv[1];
+  if (!projectDir || !command) { io.error(USAGE); return 1; }
+  const path = join(resolve(projectDir), 'budget.json');
+  let next;
+  try {
+    if (command === 'init') {
+      next = createBudget({
+        currency: optional(argv, '--currency', 'USD'),
+        preset: required(argv, '--preset'),
+        capMicros: integer(argv, '--cap-micros'),
+      });
+    } else {
+      const ledger = await readLedger(path);
+      if (command === 'status') {
+        io.log(JSON.stringify({ ...budgetTotals(ledger), ledger }, null, 2));
+        return 0;
+      }
+      if (command === 'reserve') {
+        next = reserveTransaction(ledger, {
+          id: required(argv, '--id'),
+          kind: required(argv, '--kind'),
+          provider: required(argv, '--provider'),
+          model: required(argv, '--model'),
+          quotedMicros: integer(argv, '--quoted-micros'),
+          promptPath: optional(argv, '--prompt-path'),
+          duration: optional(argv, '--duration'),
+          resolution: optional(argv, '--resolution'),
+        });
+      } else if (command === 'settle') {
+        next = settleTransaction(
+          ledger, required(argv, '--id'), integer(argv, '--actual-micros'),
+        );
+      } else if (command === 'unknown') {
+        next = markTransactionUnknown(ledger, required(argv, '--id'));
+      } else if (command === 'raise-cap') {
+        next = raiseBudgetCap(
+          ledger, integer(argv, '--cap-micros'), optional(argv, '--preset', ledger.preset),
+        );
+      } else {
+        io.error(USAGE);
+        return 1;
+      }
+    }
+  } catch (error) {
+    io.error(String(error?.message ?? error));
+    return error instanceof SyntaxError || error?.code ? 2 : 1;
+  }
+  try {
+    await writeJsonAtomic(path, { ...next, totals: budgetTotals(next) });
+    io.log(JSON.stringify({ ...budgetTotals(next), ledger: next }, null, 2));
+    return 0;
+  } catch (error) {
+    io.error('Budget write failed: ' + String(error?.message ?? error));
+    return 2;
+  }
+}
+
+if (isDirect(import.meta.url)) process.exitCode = await main();
+```
+
+Add `scroll-wizard-budget` to `package.json#bin`.
+
+- [ ] **Step 4: Run tests** — `npx vitest run tests/unit/budget.test.mjs tests/unit/package.test.mjs` — expect PASS.
+
+- [ ] **Step 5: Commit** — `git add scripts/budget.mjs tests/unit/budget.test.mjs tests/unit/package.test.mjs package.json && git commit -m "feat: add hard-cap generation budget ledger"`
+
+---
+
+### Task 10: SKILL.md v2 workflow
 
 **Files:**
 - Modify: `SKILL.md`
 - Modify: `tests/skill/scenarios.md` (gate names/steps), `tests/unit/template.test.mjs` / `tests/unit/package.test.mjs` only if they enumerate template files or scripts (check first)
 
 **Interfaces:**
-- Consumes: every script and gate from Tasks 1–7 (exact CLI names: `reencode-video`, `stills-to-frames`; gate names: `storyboard`, `stills-preview`).
+- Consumes: every script/helper and gate from Tasks 1–9, including `budget.mjs`, adaptive beat/provider helpers, `reencode-video`, and `stills-to-frames`.
 
 - [ ] **Step 1: Rewrite the workflow sections of `SKILL.md`** (keep all Core rules, receipt discipline, handoff-card format, and prompt-craft confidentiality rules as-is). Concrete edits:
 
@@ -1076,51 +1585,57 @@ Note: check `replaceDirectory`'s signature in `scripts/lib/files.mjs` first (ext
 |---|---|---|---|
 | Brief | Hard | brief.md and intake values | brief |
 | Storyboard | Light | active beat prompts, beat stills, and Pencil-reviewed overlays in values.json | storyboard |
-| Stills preview | Light | stills-only site directory (skipped once input/video.mp4 exists) | stills-preview |
+| Stills preview | Light | stable beat-frame preview + reviewed overlays (legacy-only skip when a v1 video has no beat prompts) | stills-preview |
 | Video watched | Hard | prompts/video.txt and input/video.mp4 | video |
 | Extraction review | Light | frames + holds/posterIndex (frames mode) or media/ re-encode report (video mode) | extraction |
 | Theme tokens | Light | theme in values.json | theme |
 | Preview | Hard | complete site directory | preview |
 
-2. **Step 1 Intake additions:** ask for beat count (3–10) alongside the existing brand/vibe/motion/holds/CTA pass; ask for a payload preset (frames density in frames mode, or re-encode width/CRF in video mode) and always state the estimated size and mid-4G load time from the script reports. Product-scrub register: default `scrub.linger` to 0.35, plan holds on feature beats, and use orbit/dolly/light-sweep/peel-back moves around one hero product on clean ground — never an environment fly-through.
+2. **Step 1 Intake additions:** collect claim/section/process/catalog density, run `recommendBeatCount`, explain the 3–10 recommendation, and let the user override it. Ask for Free/Cheapest/Balanced/Quality-first plus an exact hard cap; initialize `budget.json` before any paid call. Ask for a payload preset and always state estimated size and mid-4G load time. Product-scrub defaults linger to 0.35 and uses feature-beat holds with orbit/dolly/light-sweep/peel-back motion around one clean-ground hero product.
 
 3. **Step 2 becomes Storyboard:** write `prompts/keyframe-beat-<n>.txt` for each beat (beat-1 doubles as the video's first frame, the final beat as its last). Collect stills via the existing manual handoff cards or per-image money-gated API calls, into `input/keyframes/beat-<n>.<ext>`. Then, when Pencil MCP tools are available (probe by calling `get_editor_state` once; if unavailable, say so and fall back to numeric `values.json` editing): create one Pencil canvas per beat with the still as background and the overlay copy (title/body/stats/CTA) as editable nodes; iterate with the user via screenshots; on approval, write the resulting copy, `position`, `at` ranges, and `hold` flags back into `values.json` overlays. Approve with `--approve storyboard`.
 
-4. **New Step 3 — Stills preview (free):** run `node <skill-root>/scripts/stills-to-frames.mjs <project> --width W --quality Q`, then `scaffold-site.mjs`; serve and review in the browser. Offer it as a shippable zero-video endpoint. Approve with `--approve stills-preview`. Skipped automatically once a video exists.
+4. **New Step 3 — Stills preview (no video-generation cost):** run `stills-to-frames`, then scaffold and review. Still acquisition obeys the ledger; Free uses user-provided/manual assets only. Offer the result as a shippable zero-video endpoint and approve `stills-preview` before offering video.
 
 5. **Step 4 — Video, with budget menu.** Before writing `prompts/video.txt`, present the route menu with cost character and only routes actually available in this session:
 
 | Route | Cost character |
 |---|---|
 | Manual handoff (Flow or user's own tool) | User's plan credits (default) |
-| Seedance / Kling API | Per-clip API pricing |
+| Veo / Seedance / Kling API | Current verified per-clip pricing and capability limits |
 | Higgsfield API | Per-clip, typically pricier |
 | Shorter/lower-res variant of any route (4–6 s, 720p) | Cheapest paid |
 | No video — ship the stills site | Free |
 
-Every API route keeps the per-call money gate. Approved beat stills become the generation's keyframe references (beat-1 → first, last beat → last).
+Build route objects only from verified current-session capabilities, filter/rank them inside the remaining ledger budget, and show excluded reasons. Every paid call must reserve its maximum quote with `budget reserve` before generation, then `settle` or `unknown`. Approved beat stills become references only to the extent supported by the chosen route. When the cap is reached, explain the exact additional amount and likely targeted improvement without guaranteeing quality or raising the cap automatically.
 
-6. **Step 5 — Derive playback.** Default is video mode: `node <skill-root>/scripts/reencode-video.mjs <project>/input/video.mp4 <project>/media [--crf N] [--width W]`, report the JSON payload summary, set `"scrub": { "mode": "video" }` in `values.json`, approve `extraction` (the gate now covers the re-encode report in video mode). Frames mode (`extract-frames.mjs`) remains available when the user prefers it or video playback misbehaves; hold/posterIndex review applies only in frames mode.
+Run `plan-generation routes` against the persisted preflight route JSON instead of ranking providers informally. Run `plan-generation beats` during intake and persist the user-confirmed override in `values.json`.
+
+6. **Step 5 — Derive playback.** Default after video approval is balanced blob-video mode: `node <skill-root>/scripts/reencode-video.mjs <project>/input/video.mp4 <project>/media --gop 8 --crf 23 --width 1600`; offer `--all-intra` only with its payload warning. Report the JSON payload summary and approve `extraction`, which hashes encoded media in video mode. Frames mode remains available when preferred or measured video playback is poor. With No video, set `generation.video` false, derive beat frames, skip only the video gate, and still approve extraction.
 
 7. **Quick reference** gains:
 
 ```text
 node <skill-root>/scripts/reencode-video.mjs <project>/input/video.mp4 <project>/media --crf 23 --width 1600
 node <skill-root>/scripts/stills-to-frames.mjs <project> --width 1600 --quality 80
+node <skill-root>/scripts/budget.mjs <project> status
+node <skill-root>/scripts/plan-generation.mjs beats --claims 4 --sections 5
 ```
 
-8. Renumber the remaining steps (theme → 6, preview → 7, deploy → 8) and update every in-text step reference.
+8. Renumber the remaining steps (theme → 6, preview → 7, deploy → 8). Require the same-media responsive mobile checks: no horizontal overflow, safe-area padding, readable overlays, touch-sized CTAs, coarse-pointer seek tuning, iOS priming, and height-only resize stability. Do not add portrait-generation routes.
 
 - [ ] **Step 2: Update `tests/skill/scenarios.md`** wherever it names the `keyframes` gate or old step numbers; check `tests/unit/package.test.mjs` and `tests/unit/template.test.mjs` for file enumerations (new files: `scripts/reencode-video.mjs`, `scripts/stills-to-frames.mjs`; template unchanged in file list except `index.html` content) and update if they assert lists.
 
 - [ ] **Step 3: Full suite** — `npx vitest run && npx playwright test` — expect PASS.
 
-- [ ] **Step 4: Commit** — `git add SKILL.md tests/ && git commit -m "docs: v2 workflow (storyboard + Pencil loop, stills preview, budget menu, video mode)"`
+- [ ] **Step 4: Commit** — `git add SKILL.md tests/ && git commit -m "docs: add adaptive budgeted v2 workflow"`
 
 ---
 
 ## Self-Review Notes
 
-- Spec coverage: §1 dual modes → Tasks 1–5; §2 storyboard/Pencil → Tasks 6–8; §3 stills site → Tasks 7–8; §4 budget menu → Task 8; §5 product register → Task 8 (linger default, prompt craft) + Task 1 (linger); §6 gates → Task 6. Out-of-scope items untouched.
-- v1 compatibility is tested in Task 6 (legacy receipt case + real `scrollcar` sanity check).
-- Playwright Chromium cannot decode H.264, so the browser fixture uses VP9 webm; `safeMediaPath` accepts both `.mp4` and `.webm` for this reason.
+- Adaptive intake/provider filtering: Task 8; hard-cap persistence and reconciliation: Task 9; orchestration and cap-hit guidance: Task 10.
+- Storyboard/Pencil and stable receipts: Tasks 6 and 10; stills-only derivation: Task 7; video/frames playback and responsive mobile behavior: Tasks 1–5.
+- v1 compatibility is tested in Task 6 with both synthetic legacy receipts and the real `scrollcar` project.
+- Playwright Chromium cannot decode H.264, so Task 3 uses an all-intra VP9 WebM fixture while production encoding defaults to H.264 GOP 8.
+- Out-of-scope connector clips, portrait generation, frameworks, automatic rerolls, and automatic cap increases remain absent.
