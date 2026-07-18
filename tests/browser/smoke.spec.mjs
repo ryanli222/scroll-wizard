@@ -53,7 +53,7 @@ test('poster appears before delayed sequence and canvas scrubs', async ({ page }
     }
     await route.continue();
   });
-  await page.goto('/');
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#poster')).toBeVisible();
   await expect(page.locator('#poster')).not.toHaveClass(/is-hidden/);
 
@@ -197,6 +197,12 @@ test('video mode scrubs the video with scroll', async ({ page, request }) => {
 
 test('video gesture priming is installed before loading and runs only once', async ({ page, request }) => {
   await requireVideoFixture(request);
+  const configuredRequests = [];
+  page.on('request', (mediaRequest) => {
+    if (mediaRequest.url().endsWith('/media/video.webm')) {
+      configuredRequests.push(mediaRequest.resourceType());
+    }
+  });
   await page.addInitScript(() => {
     window.__PRIME_CALLS__ = { emptyRejects: 0, pause: 0, play: 0, sources: [] };
     HTMLMediaElement.prototype.play = function play() {
@@ -225,8 +231,9 @@ test('video gesture priming is installed before loading and runs only once', asy
   const priming = await page.evaluate(() => window.__PRIME_CALLS__);
   expect(priming.emptyRejects).toBe(0);
   expect(priming.play).toBe(1);
-  expect(priming.sources[0]).toContain('/video/media/video.webm');
   await page.waitForSelector('#loader', { state: 'hidden' });
+  expect(configuredRequests).toEqual(['fetch']);
+  expect(priming.sources[0]).toMatch(/^data:video\/mp4;base64,/);
   await expect.poll(() => page.evaluate(() =>
     document.getElementById('scrub-video').currentSrc.startsWith('blob:'))).toBe(true);
   await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.4));
