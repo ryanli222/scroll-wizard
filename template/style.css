@@ -98,6 +98,7 @@ a:focus-visible {
   background: var(--surface);
   backdrop-filter: blur(18px);
   transform: translateY(-50%);
+  opacity: var(--reveal, 0);
 }
 .overlay--center { left: 50%; transform: translate(-50%, -50%); text-align: center; }
 .overlay--left { left: clamp(1rem, 6vw, 6rem); }

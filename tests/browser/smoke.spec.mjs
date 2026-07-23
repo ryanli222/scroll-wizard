@@ -682,6 +682,18 @@ test('overlay children stagger in rather than fading together', async ({ page })
   expect(Number(opacities.title)).toBeGreaterThan(Number(opacities.cta));
 });
 
+test('overlay panel is invisible outside its beat range, not just its children', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.overlay');
+  // Fixture overlay spans at: [0.05, 0.98] — scrolling to the very top is
+  // clearly outside that range, before the reveal ramp starts.
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.waitForTimeout(400);
+  const opacity = await page.evaluate(() =>
+    getComputedStyle(document.querySelector('.overlay')).opacity);
+  expect(Number(opacity)).toBeLessThan(0.05);
+});
+
 test('parallax layers stay hidden until scrub.parallax is enabled', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.parallax-layers')).toBeHidden();

@@ -384,6 +384,7 @@ function updateOverlays(overlayNodes, raw) {
     const opacity = overlayOpacity(raw, data.at);
     const visible = opacity >= 0.05;
     node.inert = !visible;
+    node.style.setProperty('--reveal', String(opacity));
     // ponytail: CTA pointer-events follow the overlay's overall visibility,
     // not its own later-staggered fade-in start — a brief early-clickable
     // window while the CTA is still fading in. Fine for a decorative CTA;
