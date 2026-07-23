@@ -3,6 +3,7 @@ import {
   alphaToK,
   applyHolds,
   canvasSize,
+  childRevealRange,
   contrastRatio,
   coverRect,
   decodeWindow,
@@ -410,5 +411,64 @@ describe('validateConfig v2', () => {
     config.scrub.mode = 'video';
     config.video = {};
     expect(selectScrubMode(config)).toBe('video');
+  });
+});
+
+describe('validateConfig process/parallax/cursorAccent', () => {
+  const base = () => JSON.parse(JSON.stringify(validConfig));
+
+  it('accepts a valid process block', () => {
+    const config = base();
+    config.process = {
+      steps: [
+        { title: 'Steep', body: '18 hours, cold.' },
+        { title: 'Pour', body: 'Over ice.' },
+      ],
+    };
+    expect(validateConfig(config).errors).toEqual([]);
+  });
+
+  it('rejects too few/too many steps and empty step fields', () => {
+    const tooFew = base();
+    tooFew.process = { steps: [] };
+    expect(validateConfig(tooFew).errors.map((e) => e.code)).toContain('process.steps');
+
+    const emptyTitle = base();
+    emptyTitle.process = { steps: [{ title: '', body: 'x' }] };
+    expect(validateConfig(emptyTitle).errors.map((e) => e.code)).toContain('process.step.title');
+
+    const tooMany = base();
+    tooMany.process = {
+      steps: Array.from({ length: 9 }, (_, i) => ({ title: 't' + i, body: 'b' })),
+    };
+    expect(validateConfig(tooMany).errors.map((e) => e.code)).toContain('process.steps');
+  });
+
+  it('validates scrub.parallax and scrub.cursorAccent as booleans', () => {
+    const badParallax = base();
+    badParallax.scrub.parallax = 'yes';
+    expect(validateConfig(badParallax).errors.map((e) => e.code)).toContain('scrub.parallax');
+
+    const badCursor = base();
+    badCursor.scrub.parallax = true;
+    badCursor.scrub.cursorAccent = 1;
+    expect(validateConfig(badCursor).errors.map((e) => e.code)).toContain('scrub.cursorAccent');
+
+    const good = base();
+    good.scrub.parallax = true;
+    good.scrub.cursorAccent = false;
+    expect(validateConfig(good).errors).toEqual([]);
+  });
+});
+
+describe('childRevealRange', () => {
+  it('shifts the start forward by a fraction of the range width, keeping the end fixed', () => {
+    expect(childRevealRange([0.2, 0.6], 0)).toEqual([0.2, 0.6]);
+    expect(childRevealRange([0.2, 0.6], 0.5)).toEqual([0.4, 0.6]);
+  });
+
+  it('clamps an out-of-range fraction', () => {
+    expect(childRevealRange([0.2, 0.6], 2)).toEqual([0.6, 0.6]);
+    expect(childRevealRange([0.2, 0.6], -1)).toEqual([0.2, 0.6]);
   });
 });

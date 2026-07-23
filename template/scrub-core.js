@@ -102,6 +102,13 @@ export function overlayOpacity(progress, range, fade) {
   return clamp(Math.min((progress - start) / ramp, (end - progress) / ramp), 0, 1);
 }
 
+export function childRevealRange(range, offsetFraction) {
+  const [start, end] = range;
+  const width = end - start;
+  const fraction = clamp(Number.isFinite(offsetFraction) ? offsetFraction : 0, 0, 1);
+  return [start + fraction * width, end];
+}
+
 export function holdFrames(holds, frameCount) {
   return holds.map(([start]) =>
     progressToFrame(applyHolds(start, holds), frameCount));
@@ -398,6 +405,33 @@ export function validateConfig(config) {
     (sum, hold) => sum + hold.range[1] - hold.range[0], 0,
   );
   if (holdTotal >= 1) addError('holds.total', 'overlays', 'Holds cannot cover the whole scrub.');
+
+  if (config.process !== undefined) {
+    if (!config.process || typeof config.process !== 'object' || Array.isArray(config.process)) {
+      addError('process.type', 'process', 'Process must be an object.');
+    } else {
+      const steps = config.process.steps;
+      if (!Array.isArray(steps) || steps.length < 1 || steps.length > 8) {
+        addError('process.steps', 'process.steps', 'Process needs 1 to 8 steps.');
+      } else {
+        steps.forEach((step, index) => {
+          const path = 'process.steps[' + index + ']';
+          if (!step || typeof step.title !== 'string' || !step.title.trim()) {
+            addError('process.step.title', path + '.title', 'Each step needs a non-empty title.');
+          }
+          if (!step || typeof step.body !== 'string' || !step.body.trim()) {
+            addError('process.step.body', path + '.body', 'Each step needs a non-empty body.');
+          }
+        });
+      }
+    }
+  }
+  if (config.scrub?.parallax !== undefined && typeof config.scrub.parallax !== 'boolean') {
+    addError('scrub.parallax', 'scrub.parallax', 'parallax must be a boolean.');
+  }
+  if (config.scrub?.cursorAccent !== undefined && typeof config.scrub.cursorAccent !== 'boolean') {
+    addError('scrub.cursorAccent', 'scrub.cursorAccent', 'cursorAccent must be a boolean.');
+  }
 
   if (config.outro?.cta) validateCta(config.outro.cta, 'outro.cta', addError);
   return { errors, warnings };
