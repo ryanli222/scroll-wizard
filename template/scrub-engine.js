@@ -2,6 +2,7 @@ import {
   alphaToK,
   applyHolds,
   canvasSize,
+  childRevealRange,
   coverRect,
   decodeWindow,
   frameFilename,
@@ -45,6 +46,13 @@ function linkButton(cta, className) {
   return link;
 }
 
+const STAGGER_ROLES = [
+  ['title', 0],
+  ['body', 0.12],
+  ['stats', 0.24],
+  ['cta', 0.36],
+];
+
 function renderOverlay(data, index) {
   const panel = element(
     'article',
@@ -52,8 +60,9 @@ function renderOverlay(data, index) {
   );
   panel.dataset.overlayIndex = String(index);
   panel.inert = true;
-  if (data.title) panel.append(element('h2', 'overlay__title', data.title));
-  if (data.body) panel.append(element('p', 'overlay__body', data.body));
+  const fields = {};
+  if (data.title) fields.title = element('h2', 'overlay__title', data.title);
+  if (data.body) fields.body = element('p', 'overlay__body', data.body);
   if (data.stats?.length) {
     const list = element('div', 'stats');
     for (const stat of data.stats) {
@@ -64,10 +73,11 @@ function renderOverlay(data, index) {
       );
       list.append(chip);
     }
-    panel.append(list);
+    fields.stats = list;
   }
-  if (data.cta) panel.append(linkButton(data.cta, 'overlay__cta'));
-  return panel;
+  if (data.cta) fields.cta = linkButton(data.cta, 'overlay__cta');
+  for (const field of Object.values(fields)) panel.append(field);
+  return { node: panel, fields };
 }
 
 function renderOutro(data) {
@@ -120,9 +130,9 @@ function applyTheme(config) {
 
 function renderCopy(config) {
   const overlayNodes = (config.overlays ?? []).map((data, index) => {
-    const node = renderOverlay(data, index);
+    const { node, fields } = renderOverlay(data, index);
     overlayLayer.append(node);
-    return { data, node };
+    return { data, node, fields };
   });
   renderOutro(config.outro);
   footerBrand.textContent = config.brand.name;
@@ -370,13 +380,21 @@ if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
 }
 
 function updateOverlays(overlayNodes, raw) {
-  for (const { data, node } of overlayNodes) {
+  for (const { data, node, fields } of overlayNodes) {
     const opacity = overlayOpacity(raw, data.at);
-    node.style.opacity = String(opacity);
-    node.style.setProperty('--reveal', String(opacity));
     const visible = opacity >= 0.05;
     node.inert = !visible;
+    // ponytail: CTA pointer-events follow the overlay's overall visibility,
+    // not its own later-staggered fade-in start — a brief early-clickable
+    // window while the CTA is still fading in. Fine for a decorative CTA;
+    // revisit with a per-child pointer-events gate if it ever matters.
     node.style.pointerEvents = visible ? 'auto' : 'none';
+    for (const [role, offsetFraction] of STAGGER_ROLES) {
+      const field = fields[role];
+      if (!field) continue;
+      const childOpacity = overlayOpacity(raw, childRevealRange(data.at, offsetFraction));
+      field.style.setProperty('--reveal', String(childOpacity));
+    }
   }
 }
 

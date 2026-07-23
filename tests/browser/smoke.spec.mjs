@@ -662,3 +662,22 @@ test('phone viewport keeps tall portrait overlay content reachable', async ({ br
     await context.close();
   }
 });
+
+test('overlay children stagger in rather than fading together', async ({ page }) => {
+  await page.goto('/');
+  // Overlay rendering finishes after the async poster load, so wait for it
+  // before scrolling/evaluating rather than racing document.body.scrollHeight.
+  await page.waitForSelector('.overlay');
+  await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.09));
+  // Give the rAF-driven tick a moment to run and the CSS opacity transition
+  // to settle before reading computed styles.
+  await page.waitForTimeout(400);
+  const opacities = await page.evaluate(() => {
+    const overlay = document.querySelector('.overlay');
+    return {
+      title: getComputedStyle(overlay.querySelector('.overlay__title')).opacity,
+      cta: getComputedStyle(overlay.querySelector('.overlay__cta')).opacity,
+    };
+  });
+  expect(Number(opacities.title)).toBeGreaterThan(Number(opacities.cta));
+});
