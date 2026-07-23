@@ -33,3 +33,12 @@ describe('v2 workflow documentation contracts', () => {
     );
   });
 });
+
+describe('visual ending treatment', () => {
+  it('asks whether the page ends on-frame or continues to a solid text section', () => {
+    expect(prose).toMatch(/How should the page finish visually/i);
+    expect(prose).toMatch(/Final-frame hold.*page ends there/i);
+    expect(prose).toMatch(/Solid text continuation.*solid theme-background statement/i);
+    expect(prose).toMatch(/never navigates to another URL/i);
+  });
+});

@@ -60,7 +60,7 @@ For every gate, follow this recipe and nothing shorter:
 1. Show the artifact or a concise summary of it. If `status.mjs` reports this gate as
    `stale` (an upstream input is now newer than this gate's derived artifact) or
    `needs re-review` (an existing receipt whose manifest hash no longer matches the
-   current file), say so explicitly in that summary — name what changed and why the
+   current file), say so explicitly in that summary â€” name what changed and why the
    old approval no longer covers it. Never silently re-gate without surfacing the
    mismatch.
 2. Give one recommendation.
@@ -70,7 +70,7 @@ For every gate, follow this recipe and nothing shorter:
    continuing to the next step.
 
 "Light" gates use the same recipe with less ceremony (a short summary instead of a
-full artifact dump) — they are never skipped and never auto-approved. The only
+full artifact dump) â€” they are never skipped and never auto-approved. The only
 light-gate exception is `stills-preview` when `status.mjs` explicitly reports that
 legacy skip; never infer the exception from files or project history.
 
@@ -81,7 +81,7 @@ legacy skip; never infer the exception from files or project history.
   is missing.
 - Default to manual mode (user runs generation themselves, e.g. in Flow).
 - Offer API mode only when relevant media-generation tools are actually available to
-  you right now — never assume or promise a capability you have not confirmed.
+  you right now â€” never assume or promise a capability you have not confirmed.
 
 ## Step 1: Intake
 
@@ -114,6 +114,14 @@ legacy skip; never infer the exception from files or project history.
 
 ## Step 2: Storyboard
 
+Before the free-text outline is approved, ask exactly:
+
+> How should the page finish visually?
+>
+> 1. **Final-frame hold** — the scrub reaches its last frame and the page ends there.
+> 2. **Solid text continuation** — scrolling past the scrub reveals a solid theme-background statement with centered text.
+
+This choice never navigates to another URL. It only determines which sections follow `scrub-hero` on the same document. Persist it through `sections`: Final-frame hold ends the explicit array with `{ "type": "scrub-hero" }`; Solid text continuation appends `{ "type": "statement", "text": "<approved ending copy>" }` directly after it. Ask for and persist the approved ending copy before storyboard approval. Do not add a separate `endingMode` field.
 - Draft a free text-only outline for the confirmed beat count. Ask for explicit
   approval of the free text-only outline and end the turn before acquiring stills or
   making any paid generation call.
@@ -126,7 +134,7 @@ legacy skip; never infer the exception from files or project history.
   approval, reserve with `budget.mjs reserve`, then `settle` or mark `unknown`.
 - On intake of dropped files: validate every file, view it, propose a role mapping,
   and explicitly ask the user when the mapping is ambiguous. Never guess a role for an
-  image when more than one candidate plausibly fits — checking for an existing
+  image when more than one candidate plausibly fits â€” checking for an existing
   `prompts/keyframe-beat-<n>.txt` description is not the same as confirming which file
   fills that role.
 - Probe Pencil once with `get_editor_state`. If unavailable, say so and fall back to
@@ -200,7 +208,7 @@ legacy skip; never infer the exception from files or project history.
 - View 2-3 actual beat frames, or the video poster plus representative approved beats,
   before proposing any theme.
 - Derive `bg`, `text`, `accent`, `surface`, `radius`, and the display/body font stacks
-  from what is actually in those frames — not from the brand name alone.
+  from what is actually in those frames â€” not from the brand name alone.
 - Persist `theme` in `values.json` before asking for the theme go-ahead.
 - Explain each token in one short sentence tied to something visible in the viewed
   frames.
@@ -233,7 +241,7 @@ legacy skip; never infer the exception from files or project history.
 ## Handoff card
 
 Use this exact shape for every manual handoff, one card per request, then end the
-turn — do not poll, re-check the folder, or keep working after printing it:
+turn â€” do not poll, re-check the folder, or keep working after printing it:
 
 ~~~markdown
 ### Your turn in Flow
@@ -263,7 +271,7 @@ credits or cost directly, so cost is simply not mentioned as a skill-side concer
 - Derive visuals from the user's brief and the actual frames in hand, not from a
   generic template.
 - Apple, Zipline, Nothin', haoqi, Tesla, Valentime, luxury material, and soft
-  editorial are private reasoning vocabulary only — internal shorthand for motion and
+  editorial are private reasoning vocabulary only â€” internal shorthand for motion and
   material language, never printed verbatim to the user unprompted.
 - Surface a named reference only when the user named it first or their brief strongly
   and unambiguously matches it.
@@ -294,19 +302,19 @@ node <skill-root>/scripts/status.mjs <project> --approve <gate>
   preview complaint. Edit `values.json` and re-run `scaffold-site.mjs`; a hand-edited
   `site/` file drifts from `values.json` and gets silently overwritten (or diverges
   further) on the next scaffold.
-- Treating "light" gate wording as license to skip asking — hard-gate ceremony can be
+- Treating "light" gate wording as license to skip asking â€” hard-gate ceremony can be
   lighter, but every gate still needs a go-ahead.
 - Treating a present file (video, image, receipt-looking JSON) as proof it was
   approved. Only `status.mjs` reporting a matching, chain-valid receipt counts.
 - Letting an old prompt in `prompts/history` leak back into the active keyframe or
-  video plan — only the current `prompts/*.txt` files are active.
+  video plan â€” only the current `prompts/*.txt` files are active.
 - Leaving a selected `.mov` file un-canonicalized; it must be renamed to
   `input/video.mp4` before validation and the video gate.
 - Letting a theme edit invalidate an already-approved extraction; theme and
   extraction are independent gates over independent slices of `values.json`.
 - Continuing to work after printing a manual handoff card instead of ending the turn.
 - Guessing a role mapping for an ambiguous dropped file instead of asking, even when
-  a prompt file describes the intended role in detail — a description is not proof of
+  a prompt file describes the intended role in detail â€” a description is not proof of
   which file satisfies it.
 - Starting a preview-rejection fix at the video layer instead of the cheapest layer
   (theme, then copy/stops/holds, then payload, then video) that could plausibly fix
