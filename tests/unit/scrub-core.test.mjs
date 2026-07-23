@@ -525,3 +525,62 @@ describe('pointToPixel', () => {
     expect(Number.isNaN(p.x)).toBe(true);
   });
 });
+
+describe('validateConfig sections', () => {
+  const base = () => structuredClone(validConfig);
+
+  it('accepts an absent sections property for v2 compatibility', () => {
+    const { errors } = validateConfig(base());
+    expect(errors.filter((entry) => entry.path.startsWith('sections'))).toEqual([]);
+  });
+
+  it('rejects a non-array sections value', () => {
+    const { errors } = validateConfig({ ...base(), sections: {} });
+    expect(errors).toContainEqual(expect.objectContaining({ code: 'sections.type' }));
+  });
+
+  it('rejects unknown and duplicate scrub section types', () => {
+    const { errors } = validateConfig({
+      ...base(),
+      sections: [{ type: 'scrub-hero' }, { type: 'carousel' }, { type: 'scrub-hero' }],
+    });
+    expect(errors.map((entry) => entry.code)).toEqual(
+      expect.arrayContaining(['section.type', 'sections.scrub-duplicate']),
+    );
+  });
+
+  it('validates every typed section while accepting a full valid composition', () => {
+    const sections = [
+      { type: 'masthead', headline: 'Hello' },
+      { type: 'scrub-hero' },
+      { type: 'feature-split', headline: 'Feature', side: 'right', media: { kind: 'image', src: 'media/poster.webp', alt: 'Product' } },
+      { type: 'statement', text: 'A statement' },
+      { type: 'spec', rows: [{ label: 'Weight', value: '1 kg', beat: 2 }] },
+      { type: 'gallery', items: [{ src: 'media/poster.webp', alt: 'Gallery image', beat: 1 }] },
+      { type: 'cta', headline: 'Finish', cta: { label: 'Go', href: '#go' }, emailCapture: true, background: 'media/poster.webp' },
+    ];
+    expect(validateConfig({ ...base(), sections }).errors).toEqual([]);
+    expect(validateConfig({ ...base(), sections: [] }).errors).toEqual([]);
+  });
+
+  it('reports required fields and invalid enums at their exact paths', () => {
+    const { errors } = validateConfig({
+      ...base(),
+      sections: [
+        { type: 'masthead' },
+        { type: 'feature-split', headline: '', side: 'middle', media: { kind: 'audio', src: 'nope', alt: '' } },
+        { type: 'statement' },
+        { type: 'spec', rows: [{ label: '', value: '', beat: -1 }] },
+        { type: 'gallery', items: [{}] },
+        { type: 'cta', headline: '', cta: { label: '', href: 'javascript:bad' }, emailCapture: 'yes', background: 'frames/nope.gif' },
+      ],
+    });
+    expect(errors).toContainEqual(expect.objectContaining({ code: 'section.headline', path: 'sections[0].headline' }));
+    expect(errors.map((entry) => entry.code)).toEqual(expect.arrayContaining([
+      'section.side', 'section.media-kind', 'section.media-src', 'section.media-alt',
+      'section.text', 'spec.label', 'spec.value', 'spec.beat', 'gallery.item',
+      'cta.label', 'cta.href', 'section.email-capture', 'section.background',
+    ]));
+  });
+});
+

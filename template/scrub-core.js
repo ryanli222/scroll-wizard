@@ -284,6 +284,91 @@ function safePosterPath(value) {
 
 const issue = (code, path, message) => ({ code, path, message });
 
+export const SECTION_TYPES = [
+  'masthead', 'scrub-hero', 'feature-split', 'statement', 'spec', 'gallery', 'cta',
+];
+
+const nonEmptyString = (value) => typeof value === 'string' && Boolean(value.trim());
+const safeImagePath = (value) => safePosterPath(value)
+  || (safeFramePath(value) && /\.(webp|jpe?g|png)$/i.test(value));
+
+function validateSectionMedia(media, path, addError) {
+  if (!media || typeof media !== 'object' || Array.isArray(media)) {
+    addError('section.media', path, 'Feature media is required.');
+    return;
+  }
+  if (!['image', 'video'].includes(media.kind)) {
+    addError('section.media-kind', path + '.kind', 'Feature media kind must be image or video.');
+  }
+  const validPath = media.kind === 'video' ? safeVideoPath(media.src) : safeImagePath(media.src);
+  if (!validPath) addError('section.media-src', path + '.src', 'Feature media src is invalid.');
+  if (!nonEmptyString(media.alt)) {
+    addError('section.media-alt', path + '.alt', 'Feature media alt text is required.');
+  }
+}
+
+function validateSection(section, path, addError) {
+  if (!section || typeof section !== 'object' || Array.isArray(section)) {
+    addError('section.type', path, 'Section must be an object.');
+    return;
+  }
+  if (!SECTION_TYPES.includes(section.type)) {
+    addError('section.type', path + '.type', 'Section type is not supported.');
+    return;
+  }
+  if (section.type === 'masthead') {
+    if (!nonEmptyString(section.headline)) addError('section.headline', path + '.headline', 'Masthead headline is required.');
+  } else if (section.type === 'feature-split') {
+    if (!nonEmptyString(section.headline)) addError('section.headline', path + '.headline', 'Feature headline is required.');
+    if (section.side !== undefined && !['left', 'right'].includes(section.side)) {
+      addError('section.side', path + '.side', 'Feature side must be left or right.');
+    }
+    validateSectionMedia(section.media, path + '.media', addError);
+  } else if (section.type === 'statement') {
+    if (!nonEmptyString(section.text)) addError('section.text', path + '.text', 'Statement text is required.');
+  } else if (section.type === 'spec') {
+    if (!Array.isArray(section.rows)) {
+      addError('spec.rows', path + '.rows', 'Spec rows must be an array.');
+    } else {
+      section.rows.forEach((row, index) => {
+        const rowPath = path + '.rows[' + index + ']';
+        if (!row || typeof row !== 'object' || Array.isArray(row)) {
+          addError('spec.row', rowPath, 'Spec row must be an object.');
+          return;
+        }
+        if (!nonEmptyString(row.label)) addError('spec.label', rowPath + '.label', 'Spec label is required.');
+        if (!nonEmptyString(row.value)) addError('spec.value', rowPath + '.value', 'Spec value is required.');
+        if (row.beat !== undefined && (!Number.isInteger(row.beat) || row.beat < 0)) {
+          addError('spec.beat', rowPath + '.beat', 'Spec beat must be a non-negative integer.');
+        }
+      });
+    }
+  } else if (section.type === 'gallery') {
+    if (!Array.isArray(section.items)) {
+      addError('gallery.items', path + '.items', 'Gallery items must be an array.');
+    } else {
+      section.items.forEach((item, index) => {
+        const itemPath = path + '.items[' + index + ']';
+        if (!item || typeof item !== 'object' || Array.isArray(item) || (item.src === undefined && item.beat === undefined)) {
+          addError('gallery.item', itemPath, 'Gallery item needs src or beat.');
+          return;
+        }
+        if (item.src !== undefined && !safeImagePath(item.src)) addError('gallery.src', itemPath + '.src', 'Gallery image path is invalid.');
+        if (item.src !== undefined && !nonEmptyString(item.alt)) addError('gallery.alt', itemPath + '.alt', 'Gallery image alt text is required.');
+        if (item.beat !== undefined && (!Number.isInteger(item.beat) || item.beat < 0)) addError('gallery.beat', itemPath + '.beat', 'Gallery beat must be a non-negative integer.');
+      });
+    }
+  } else if (section.type === 'cta') {
+    if (!nonEmptyString(section.headline)) addError('section.headline', path + '.headline', 'CTA headline is required.');
+    if (section.cta !== undefined) {
+      if (!section.cta || typeof section.cta !== 'object' || Array.isArray(section.cta)) addError('section.cta', path + '.cta', 'CTA must be an object.');
+      else validateCta(section.cta, path + '.cta', addError);
+    }
+    if (section.emailCapture !== undefined && typeof section.emailCapture !== 'boolean') addError('section.email-capture', path + '.emailCapture', 'emailCapture must be a boolean.');
+    if (section.background !== undefined && !safeImagePath(section.background)) addError('section.background', path + '.background', 'CTA background must be a normalized image path.');
+  }
+}
+
 export function validateConfig(config) {
   const errors = [];
   const warnings = [];
@@ -462,6 +547,19 @@ export function validateConfig(config) {
   if (holdTotal >= 1) addError('holds.total', 'overlays', 'Holds cannot cover the whole scrub.');
 
   if (config.outro?.cta) validateCta(config.outro.cta, 'outro.cta', addError);
+
+  if (config.sections !== undefined) {
+    if (!Array.isArray(config.sections)) {
+      addError('sections.type', 'sections', 'Sections must be an array.');
+    } else {
+      let scrubCount = 0;
+      config.sections.forEach((section, index) => {
+        validateSection(section, 'sections[' + index + ']', addError);
+        if (section?.type === 'scrub-hero') scrubCount += 1;
+      });
+      if (scrubCount > 1) addError('sections.scrub-duplicate', 'sections', 'Only one scrub-hero section is allowed.');
+    }
+  }
   return { errors, warnings };
 }
 
