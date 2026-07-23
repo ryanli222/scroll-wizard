@@ -688,14 +688,16 @@ async function start() {
     }
 
     applyTheme(config);
+    const sections = assembleSections(config);
+    renderSections({ container: sectionContainer, scrubElement: scrub, outroElement: outro, sections, poster: currentPoster(config) });
+    footerBrand.textContent = config.brand.name;
+    if (!scrub.isConnected) return;
     if (!reducedMotion && selectScrubMode(config) === 'video') {
       scrubVideo.src = VIDEO_PRIME_SRC;
       scrubVideo.load();
       removeVideoPrime = installVideoPrime(scrubVideo);
     }
     await loadPoster(config);
-    const sections = assembleSections(config);
-    renderSections({ container: sectionContainer, scrubElement: scrub, outroElement: outro, sections, poster: currentPoster(config) });
     overlayNodes = renderCopy(config);
     await loadFont(config);
     const stickyRect = scrub.querySelector('.scrub__sticky').getBoundingClientRect();

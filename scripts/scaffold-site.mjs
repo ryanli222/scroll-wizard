@@ -110,6 +110,7 @@ export function assembleConfig(defaults, values, frameSet, mediaSet = null) {
     },
     scrub: { ...defaults.scrub, ...creative.scrub },
   };
+  if (!Object.hasOwn(creative, 'sections')) delete config.sections;
   if (selectedDirection) {
     config.directionPreset = {
       motion: { ...selectedDirection.motion },
