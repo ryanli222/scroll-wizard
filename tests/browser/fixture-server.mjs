@@ -133,11 +133,13 @@ const processConfig = {
 };
 
 const parallaxConfig = { ...config, scrub: { ...config.scrub, parallax: true } };
+const cursorConfig = { ...config, scrub: { ...config.scrub, cursorAccent: true } };
 
 const FIXTURE_CONFIGS = {
   '/video/': videoConfig,
   '/process/': processConfig,
   '/parallax/': parallaxConfig,
+  '/cursor/': cursorConfig,
 };
 
 function fixturePrefix(pathname) {

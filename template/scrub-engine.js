@@ -414,6 +414,48 @@ function updateParallax(layers, raw) {
   }
 }
 
+function initCursorAccent(config) {
+  if (config.scrub?.cursorAccent !== true) return;
+  const container = document.getElementById('cursor-accent');
+  container.hidden = false;
+  const dots = [...container.querySelectorAll('.cursor-accent__dot')].map((node, index) => ({
+    node,
+    x: 0,
+    y: 0,
+    offsetX: (index - 1.5) * 14,
+    offsetY: (index % 2 === 0 ? -1 : 1) * 10,
+  }));
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  let pointerX = innerWidth / 2;
+  let pointerY = innerHeight / 2;
+  if (!coarse) {
+    addEventListener('pointermove', (event) => {
+      const rect = scrub.getBoundingClientRect();
+      pointerX = event.clientX - rect.left;
+      pointerY = event.clientY - rect.top;
+    });
+  }
+  const k = alphaToK(0.2);
+  let lastTime = performance.now();
+  function tick(now) {
+    const dt = Math.min(0.1, Math.max(0, (now - lastTime) / 1000));
+    lastTime = now;
+    for (const dot of dots) {
+      const targetX = coarse
+        ? innerWidth / 2 + Math.sin(now / 1400 + dot.offsetX) * 60 + dot.offsetX
+        : pointerX + dot.offsetX;
+      const targetY = coarse
+        ? innerHeight / 2 + Math.cos(now / 1700 + dot.offsetY) * 60 + dot.offsetY
+        : pointerY + dot.offsetY;
+      dot.x = smooth(dot.x, targetX, k, dt);
+      dot.y = smooth(dot.y, targetY, k, dt);
+      dot.node.style.transform = 'translate(' + dot.x + 'px, ' + dot.y + 'px)';
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
 function updateProgressBar() {
   const pageProgress = Math.min(1, Math.max(0,
     scrollY / Math.max(1, document.documentElement.scrollHeight - innerHeight)));
@@ -679,6 +721,7 @@ async function start() {
   }
 
   const parallaxLayers = initParallax(config);
+  initCursorAccent(config);
 
   if (selectScrubMode(config) === 'video') {
     let video;

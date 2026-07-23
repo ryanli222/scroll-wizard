@@ -68,6 +68,19 @@ a:focus-visible {
 .parallax-layer:nth-child(1) { background: radial-gradient(circle at 20% 25%, var(--accent) 0%, transparent 55%); }
 .parallax-layer:nth-child(2) { background: radial-gradient(circle at 80% 30%, var(--accent) 0%, transparent 45%); }
 .parallax-layer:nth-child(3) { background: radial-gradient(circle at 50% 80%, var(--surface) 0%, transparent 60%); }
+.cursor-accent[hidden] { display: none; }
+.cursor-accent { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.cursor-accent__dot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.6;
+  will-change: transform;
+}
 .scrub__vignette {
   position: absolute;
   inset: 0;
@@ -216,7 +229,7 @@ h1, h2, h3 { font-family: var(--display); }
   .scrub { height: auto !important; }
   .scrub__sticky { position: relative; height: auto; overflow: visible; }
   .scrub__poster { position: relative; width: 100%; min-height: 60vh; }
-  .scrub__canvas, .scrub__video, .loader, .parallax-layers { display: none; }
+  .scrub__canvas, .scrub__video, .loader, .parallax-layers, .cursor-accent { display: none; }
   .overlays { position: relative; display: grid; gap: 1rem; padding: 1rem; }
   .overlay, .overlay--center, .overlay--left, .overlay--right {
     position: relative;

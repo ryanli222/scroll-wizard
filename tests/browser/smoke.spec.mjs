@@ -703,3 +703,25 @@ test('reduced motion hides parallax layers entirely', async ({ page }) => {
   await page.goto('/parallax/');
   await expect(page.locator('.parallax-layers')).toBeHidden();
 });
+
+test('cursor accent stays hidden until scrub.cursorAccent is enabled', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#cursor-accent')).toBeHidden();
+});
+
+test('cursor accent dots follow the pointer on a fine-pointer viewport', async ({ page }) => {
+  await page.goto('/cursor/');
+  await expect(page.locator('#cursor-accent')).toBeVisible();
+  const dot = page.locator('.cursor-accent__dot').first();
+  const before = await dot.evaluate((el) => getComputedStyle(el).transform);
+  await page.mouse.move(300, 300);
+  await page.mouse.move(500, 120, { steps: 10 });
+  await expect.poll(() => dot.evaluate((el) => getComputedStyle(el).transform))
+    .not.toBe(before);
+});
+
+test('reduced motion hides the cursor accent entirely', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/cursor/');
+  await expect(page.locator('#cursor-accent')).toBeHidden();
+});
