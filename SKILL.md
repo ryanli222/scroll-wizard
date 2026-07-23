@@ -89,6 +89,12 @@ legacy skip; never infer the exception from files or project history.
   (fly-through/route) register.
 - Ask brand, vibe, motion, stopped scenes ("holds"), and CTA. Also collect claim count,
   section count, whether the story has a process, and catalog-item count.
+- When the story has a process, collect one short title/body pair per step (3-6
+  steps is typical) and persist it to `values.json#process`; this renders as a
+  scroll-revealed section between the hero and the closing CTA. Also collect the
+  closing headline/body/CTA for `values.json#outro` in this same conversation —
+  it renders automatically once present, and stays hidden (no empty gap) if left
+  out.
 - Run `plan-generation.mjs beats` with those density inputs. Explain the resulting
   3-to-10 beat recommendation, let the user override it, and persist the confirmed
   count in `values.json`; the user, not the heuristic, has final control.
@@ -204,6 +210,10 @@ legacy skip; never infer the exception from files or project history.
 - Persist `theme` in `values.json` before asking for the theme go-ahead.
 - Explain each token in one short sentence tied to something visible in the viewed
   frames.
+- Offer `scrub.parallax` and `scrub.cursorAccent` as optional, off-by-default
+  toggles: one sentence each — both are purely decorative (no new generation
+  call, no added payload), and both disable themselves automatically for
+  reduced-motion visitors.
 - After approval, run `scaffold-site.mjs`, passing `--force` only when replacing an
   existing `site/` directory.
 
