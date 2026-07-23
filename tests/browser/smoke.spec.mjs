@@ -218,6 +218,18 @@ test('beat nav is hidden at mobile viewport width', async ({ browser }) => {
   }
 });
 
+test('beat nav stays hidden under reduced motion even when enabled', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.route('**/config.json', async (route) => {
+    const response = await route.fetch();
+    const config = await response.json();
+    config.nav = true;
+    await route.fulfill({ response, json: config });
+  });
+  await page.goto('/');
+  await expect(page.locator('#beat-nav')).toBeHidden();
+});
+
 test('decoded bitmap count never exceeds the configured bound', async ({ page }) => {
   // Fixture has 30 frames; the engine's decode window is radius 12 ->
   // min(count, 25) frames, so exceeding 25 means eviction is broken.
