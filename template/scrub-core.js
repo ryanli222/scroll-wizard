@@ -141,7 +141,7 @@ export function jumpDuration(distancePx, jump = {}) {
   const maxMs = jump.maxMs ?? 1400;
   const pxPerMs = jump.pxPerMs ?? 2.2;
   if (!Number.isFinite(distancePx)) return minMs;
-  return clamp(Math.abs(distancePx) / pxPerMs, minMs, maxMs);
+  return Number(clamp(Math.abs(distancePx) / pxPerMs, minMs, maxMs).toFixed(10));
 }
 
 export function beatTargetY(at, sectionTop, sectionHeight, viewportH) {
