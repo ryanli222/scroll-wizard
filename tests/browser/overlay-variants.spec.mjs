@@ -36,6 +36,14 @@ test.describe('overlay variants & anchors', () => {
     await expect(page.locator('body')).toHaveClass(/dir-technical/);
   });
 
+  test('defaults an absent direction to minimal motion', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('body')).toHaveClass(/dir-minimal/);
+    const travel = await page.locator('html').evaluate((element) =>
+      element.style.getPropertyValue('--reveal-travel'));
+    expect(travel).toBe('16px');
+  });
+
   test('annotation leader point tracks the box on resize', async ({ page }) => {
     await page.setViewportSize({ width: 1200, height: 800 });
     await showVariantOverlays(page);

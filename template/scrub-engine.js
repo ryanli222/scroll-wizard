@@ -104,10 +104,11 @@ function applyTheme(config) {
   root.setProperty('--radius', theme.radius + 'px');
   if (theme.fonts?.display) root.setProperty('--display', theme.fonts.display);
   if (theme.fonts?.body) root.setProperty('--body', theme.fonts.body);
-  if (config.direction) document.body.classList.add('dir-' + config.direction);
+  const direction = config.direction ?? 'minimal';
+  document.body.classList.add('dir-' + direction);
   root.setProperty(
     '--reveal-travel',
-    (DIRECTION_TRAVEL[config.direction] ?? 24) + 'px',
+    (DIRECTION_TRAVEL[direction] ?? DIRECTION_TRAVEL.minimal) + 'px',
   );
   scrub.style.setProperty('height', config.scrub.heightVh + 'vh');
 }
