@@ -577,6 +577,27 @@ test('phone viewport keeps tall landscape overlay content reachable', async ({ b
   }
 });
 
+test('outro section is hidden by default when config has no outro', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#outro')).toBeHidden();
+});
+
+test('process steps are absent until enabled, then reveal progressively on scroll', async ({ page }) => {
+  await page.goto('/process/');
+  await expect(page.locator('#process')).toBeVisible();
+  await expect(page.locator('.step')).toHaveCount(3);
+  await expect(page.locator('.step.is-visible')).toHaveCount(0);
+  await page.evaluate(() => document.querySelector('#process').scrollIntoView());
+  await expect.poll(() => page.locator('.step.is-visible').count()).toBeGreaterThan(0);
+});
+
+test('reduced motion shows all process steps immediately', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/process/');
+  const opacity = await page.locator('.step').first().evaluate((el) => getComputedStyle(el).opacity);
+  expect(opacity).toBe('1');
+});
+
 test('phone viewport keeps tall portrait overlay content reachable', async ({ browser, request }) => {
   await requireVideoFixture(request);
   const context = await browser.newContext({
@@ -640,4 +661,79 @@ test('phone viewport keeps tall portrait overlay content reachable', async ({ br
   } finally {
     await context.close();
   }
+});
+
+test('overlay children stagger in rather than fading together', async ({ page }) => {
+  await page.goto('/');
+  // Overlay rendering finishes after the async poster load, so wait for it
+  // before scrolling/evaluating rather than racing document.body.scrollHeight.
+  await page.waitForSelector('.overlay');
+  await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.09));
+  // Give the rAF-driven tick a moment to run and the CSS opacity transition
+  // to settle before reading computed styles.
+  await page.waitForTimeout(400);
+  const opacities = await page.evaluate(() => {
+    const overlay = document.querySelector('.overlay');
+    return {
+      title: getComputedStyle(overlay.querySelector('.overlay__title')).opacity,
+      cta: getComputedStyle(overlay.querySelector('.overlay__cta')).opacity,
+    };
+  });
+  expect(Number(opacities.title)).toBeGreaterThan(Number(opacities.cta));
+});
+
+test('overlay panel is invisible outside its beat range, not just its children', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.overlay');
+  // Fixture overlay spans at: [0.05, 0.98] — scrolling to the very top is
+  // clearly outside that range, before the reveal ramp starts.
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.waitForTimeout(400);
+  const opacity = await page.evaluate(() =>
+    getComputedStyle(document.querySelector('.overlay')).opacity);
+  expect(Number(opacity)).toBeLessThan(0.05);
+});
+
+test('parallax layers stay hidden until scrub.parallax is enabled', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.parallax-layers')).toBeHidden();
+});
+
+test('parallax layers shift at different rates as the page scrolls', async ({ page }) => {
+  await page.goto('/parallax/');
+  await expect(page.locator('.parallax-layers')).toBeVisible();
+  const before = await page.evaluate(() =>
+    getComputedStyle(document.querySelectorAll('.parallax-layer')[0]).translate);
+  await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.5));
+  await expect.poll(() => page.evaluate(() =>
+    getComputedStyle(document.querySelectorAll('.parallax-layer')[0]).translate))
+    .not.toBe(before);
+});
+
+test('reduced motion hides parallax layers entirely', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/parallax/');
+  await expect(page.locator('.parallax-layers')).toBeHidden();
+});
+
+test('cursor accent stays hidden until scrub.cursorAccent is enabled', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#cursor-accent')).toBeHidden();
+});
+
+test('cursor accent dots follow the pointer on a fine-pointer viewport', async ({ page }) => {
+  await page.goto('/cursor/');
+  await expect(page.locator('#cursor-accent')).toBeVisible();
+  const dot = page.locator('.cursor-accent__dot').first();
+  const before = await dot.evaluate((el) => getComputedStyle(el).transform);
+  await page.mouse.move(300, 300);
+  await page.mouse.move(500, 120, { steps: 10 });
+  await expect.poll(() => dot.evaluate((el) => getComputedStyle(el).transform))
+    .not.toBe(before);
+});
+
+test('reduced motion hides the cursor accent entirely', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/cursor/');
+  await expect(page.locator('#cursor-accent')).toBeHidden();
 });

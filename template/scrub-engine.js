@@ -2,6 +2,7 @@ import {
   alphaToK,
   applyHolds,
   canvasSize,
+  childRevealRange,
   coverRect,
   decodeWindow,
   frameFilename,
@@ -23,6 +24,7 @@ const overlayLayer = document.getElementById('overlay-layer');
 const loadProgress = document.getElementById('load-progress');
 const loader = document.getElementById('loader');
 const outro = document.getElementById('outro');
+const processSection = document.getElementById('process');
 const fatalError = document.getElementById('fatal-error');
 const footerBrand = document.getElementById('footer-brand');
 const progressBar = document.getElementById('progress-bar');
@@ -44,6 +46,13 @@ function linkButton(cta, className) {
   return link;
 }
 
+const STAGGER_ROLES = [
+  ['title', 0],
+  ['body', 0.12],
+  ['stats', 0.24],
+  ['cta', 0.36],
+];
+
 function renderOverlay(data, index) {
   const panel = element(
     'article',
@@ -51,8 +60,9 @@ function renderOverlay(data, index) {
   );
   panel.dataset.overlayIndex = String(index);
   panel.inert = true;
-  if (data.title) panel.append(element('h2', 'overlay__title', data.title));
-  if (data.body) panel.append(element('p', 'overlay__body', data.body));
+  const fields = {};
+  if (data.title) fields.title = element('h2', 'overlay__title', data.title);
+  if (data.body) fields.body = element('p', 'overlay__body', data.body);
   if (data.stats?.length) {
     const list = element('div', 'stats');
     for (const stat of data.stats) {
@@ -63,17 +73,46 @@ function renderOverlay(data, index) {
       );
       list.append(chip);
     }
-    panel.append(list);
+    fields.stats = list;
   }
-  if (data.cta) panel.append(linkButton(data.cta, 'overlay__cta'));
-  return panel;
+  if (data.cta) fields.cta = linkButton(data.cta, 'overlay__cta');
+  for (const field of Object.values(fields)) panel.append(field);
+  return { node: panel, fields };
 }
 
 function renderOutro(data) {
   if (!data) return;
+  outro.hidden = false;
   if (data.headline) outro.append(element('h1', 'outro__headline', data.headline));
   if (data.body) outro.append(element('p', 'outro__body', data.body));
   if (data.cta) outro.append(linkButton(data.cta, 'outro__cta'));
+}
+
+function renderProcess(config) {
+  if (!config.process) return;
+  const steps = config.process.steps.map((step, index) => {
+    const article = element('article', 'step');
+    article.dataset.reveal = '';
+    article.style.setProperty('--i', String(index));
+    article.append(element('h3', 'step__title', step.title));
+    article.append(element('p', 'step__body', step.body));
+    return article;
+  });
+  processSection.append(...steps);
+  processSection.hidden = false;
+}
+
+function initScrollReveal() {
+  const targets = document.querySelectorAll('[data-reveal]');
+  if (!targets.length) return;
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      entry.target.classList.add('is-visible');
+      observer.unobserve(entry.target);
+    }
+  }, { threshold: 0.25 });
+  targets.forEach((target) => observer.observe(target));
 }
 
 function applyTheme(config) {
@@ -91,9 +130,9 @@ function applyTheme(config) {
 
 function renderCopy(config) {
   const overlayNodes = (config.overlays ?? []).map((data, index) => {
-    const node = renderOverlay(data, index);
+    const { node, fields } = renderOverlay(data, index);
     overlayLayer.append(node);
-    return { data, node };
+    return { data, node, fields };
   });
   renderOutro(config.outro);
   footerBrand.textContent = config.brand.name;
@@ -341,14 +380,81 @@ if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
 }
 
 function updateOverlays(overlayNodes, raw) {
-  for (const { data, node } of overlayNodes) {
+  for (const { data, node, fields } of overlayNodes) {
     const opacity = overlayOpacity(raw, data.at);
-    node.style.opacity = String(opacity);
-    node.style.setProperty('--reveal', String(opacity));
     const visible = opacity >= 0.05;
     node.inert = !visible;
+    node.style.setProperty('--reveal', String(opacity));
+    // ponytail: CTA pointer-events follow the overlay's overall visibility,
+    // not its own later-staggered fade-in start — a brief early-clickable
+    // window while the CTA is still fading in. Fine for a decorative CTA;
+    // revisit with a per-child pointer-events gate if it ever matters.
     node.style.pointerEvents = visible ? 'auto' : 'none';
+    for (const [role, offsetFraction] of STAGGER_ROLES) {
+      const field = fields[role];
+      if (!field) continue;
+      const childOpacity = overlayOpacity(raw, childRevealRange(data.at, offsetFraction));
+      field.style.setProperty('--reveal', String(childOpacity));
+    }
   }
+}
+
+function initParallax(config) {
+  if (config.scrub?.parallax !== true) return [];
+  const container = document.querySelector('.parallax-layers');
+  container.hidden = false;
+  return [...container.querySelectorAll('.parallax-layer')].map((node) => ({
+    node,
+    rate: Number(node.dataset.rate) || 0,
+  }));
+}
+
+function updateParallax(layers, raw) {
+  for (const { node, rate } of layers) {
+    node.style.setProperty('--parallax', String(raw * rate));
+  }
+}
+
+function initCursorAccent(config) {
+  if (config.scrub?.cursorAccent !== true) return;
+  const container = document.getElementById('cursor-accent');
+  container.hidden = false;
+  const dots = [...container.querySelectorAll('.cursor-accent__dot')].map((node, index) => ({
+    node,
+    x: 0,
+    y: 0,
+    offsetX: (index - 1.5) * 14,
+    offsetY: (index % 2 === 0 ? -1 : 1) * 10,
+  }));
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  let pointerX = innerWidth / 2;
+  let pointerY = innerHeight / 2;
+  if (!coarse) {
+    addEventListener('pointermove', (event) => {
+      const rect = scrub.getBoundingClientRect();
+      pointerX = event.clientX - rect.left;
+      pointerY = event.clientY - rect.top;
+    });
+  }
+  const k = alphaToK(0.2);
+  let lastTime = performance.now();
+  function tick(now) {
+    const dt = Math.min(0.1, Math.max(0, (now - lastTime) / 1000));
+    lastTime = now;
+    for (const dot of dots) {
+      const targetX = coarse
+        ? innerWidth / 2 + Math.sin(now / 1400 + dot.offsetX) * 60 + dot.offsetX
+        : pointerX + dot.offsetX;
+      const targetY = coarse
+        ? innerHeight / 2 + Math.cos(now / 1700 + dot.offsetY) * 60 + dot.offsetY
+        : pointerY + dot.offsetY;
+      dot.x = smooth(dot.x, targetX, k, dt);
+      dot.y = smooth(dot.y, targetY, k, dt);
+      dot.node.style.transform = 'translate(' + dot.x + 'px, ' + dot.y + 'px)';
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
 }
 
 function updateProgressBar() {
@@ -357,7 +463,7 @@ function updateProgressBar() {
   progressBar.style.width = (pageProgress * 100) + '%';
 }
 
-function runEngine(config, overlayNodes) {
+function runEngine(config, overlayNodes, parallaxLayers) {
   const holds = (config.overlays ?? [])
     .filter((overlay) => overlay.hold)
     .map((overlay) => overlay.at);
@@ -415,6 +521,7 @@ function runEngine(config, overlayNodes) {
     }
 
     updateOverlays(overlayNodes, raw);
+    updateParallax(parallaxLayers, raw);
     updateProgressBar();
 
     requestAnimationFrame(tick);
@@ -485,7 +592,7 @@ function installVideoPrime(video) {
   return cleanup;
 }
 
-function runVideoEngine(config, overlayNodes, video) {
+function runVideoEngine(config, overlayNodes, video, parallaxLayers) {
   const holds = (config.overlays ?? [])
     .filter((overlay) => overlay.hold)
     .map((overlay) => overlay.at);
@@ -556,6 +663,7 @@ function runVideoEngine(config, overlayNodes, video) {
       video.currentTime = time;
     }
     updateOverlays(overlayNodes, raw);
+    updateParallax(parallaxLayers, raw);
     updateProgressBar();
     requestAnimationFrame(tick);
   }
@@ -591,6 +699,8 @@ async function start() {
     }
     await loadPoster(config);
     overlayNodes = renderCopy(config);
+    renderProcess(config);
+    initScrollReveal();
     await loadFont(config);
   } catch (error) {
     removeVideoPrime();
@@ -611,6 +721,9 @@ async function start() {
     }
   }
 
+  const parallaxLayers = initParallax(config);
+  initCursorAccent(config);
+
   if (selectScrubMode(config) === 'video') {
     let video;
     try {
@@ -620,9 +733,9 @@ async function start() {
       showFatalError(error);
       return;
     }
-    runVideoEngine(config, overlayNodes, video);
+    runVideoEngine(config, overlayNodes, video, parallaxLayers);
   } else {
-    runEngine(config, overlayNodes);
+    runEngine(config, overlayNodes, parallaxLayers);
   }
 }
 

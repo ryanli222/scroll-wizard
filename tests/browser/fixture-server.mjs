@@ -121,6 +121,33 @@ const videoConfig = {
 };
 delete videoConfig.frames;
 
+const processConfig = {
+  ...config,
+  process: {
+    steps: [
+      { title: 'Steep', body: 'Cold, eighteen hours.' },
+      { title: 'Pour', body: 'Slow, over ice.' },
+      { title: 'Sip', body: 'However you like it.' },
+    ],
+  },
+};
+
+const parallaxConfig = { ...config, scrub: { ...config.scrub, parallax: true } };
+const cursorConfig = { ...config, scrub: { ...config.scrub, cursorAccent: true } };
+
+const FIXTURE_CONFIGS = {
+  '/video/': videoConfig,
+  '/process/': processConfig,
+  '/parallax/': parallaxConfig,
+  '/cursor/': cursorConfig,
+};
+
+function fixturePrefix(pathname) {
+  return Object.keys(FIXTURE_CONFIGS).find((prefix) => (
+    pathname === prefix || pathname === prefix.slice(0, -1) || pathname.startsWith(prefix)
+  ));
+}
+
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -132,11 +159,12 @@ const contentTypes = {
 };
 
 async function serveStatic(res, pathname) {
-  const sitePath = pathname === '/video' || pathname === '/video/'
-    ? '/index.html'
-    : pathname.startsWith('/video/')
-      ? pathname.slice('/video'.length)
-      : pathname;
+  const prefix = fixturePrefix(pathname);
+  const sitePath = !prefix
+    ? pathname
+    : (pathname === prefix || pathname === prefix.slice(0, -1))
+      ? '/index.html'
+      : pathname.slice(prefix.length - 1);
   const relative = normalize(sitePath === '/' ? '/index.html' : sitePath)
     .replace(/^([/\\]\.\.)+/, '');
   const filePath = join(templateDir, relative);
@@ -165,9 +193,10 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (pathname === '/config.json' || pathname === '/video/config.json') {
+  if (pathname === '/config.json' || (fixturePrefix(pathname) && pathname.endsWith('/config.json'))) {
+    const prefix = fixturePrefix(pathname);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify(pathname.startsWith('/video/') ? videoConfig : config));
+    res.end(JSON.stringify(prefix ? FIXTURE_CONFIGS[prefix] : config));
     return;
   }
 
@@ -191,7 +220,12 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  const frameMatch = framePattern.exec(pathname);
+  // Frame images are requested relative to the current page (e.g. a page
+  // served at /process/ requests /process/frames/frame-0001.webp), so strip
+  // any recognized fixture prefix before matching, same as serveStatic does.
+  const framePrefix = fixturePrefix(pathname);
+  const framePathname = framePrefix ? pathname.slice(framePrefix.length - 1) : pathname;
+  const frameMatch = framePattern.exec(framePathname);
   if (frameMatch) {
     const n = Number(frameMatch[1]);
     res.writeHead(200, { 'Content-Type': 'image/png' });

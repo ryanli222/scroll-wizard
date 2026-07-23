@@ -15,6 +15,17 @@
         <img id="poster" class="scrub__poster" alt="">
         <video id="scrub-video" class="scrub__video" muted playsinline aria-hidden="true"></video>
         <canvas id="scrub-canvas" class="scrub__canvas" aria-hidden="true"></canvas>
+        <div class="parallax-layers" aria-hidden="true" hidden>
+          <div class="parallax-layer" data-rate="0.15"></div>
+          <div class="parallax-layer" data-rate="0.3"></div>
+          <div class="parallax-layer" data-rate="0.5"></div>
+        </div>
+        <div id="cursor-accent" class="cursor-accent" aria-hidden="true" hidden>
+          <span class="cursor-accent__dot"></span>
+          <span class="cursor-accent__dot"></span>
+          <span class="cursor-accent__dot"></span>
+          <span class="cursor-accent__dot"></span>
+        </div>
         <div class="scrub__vignette" aria-hidden="true"></div>
         <div id="overlay-layer" class="overlays"></div>
         <div id="loader" class="loader" aria-live="polite">
@@ -24,7 +35,8 @@
         <p id="fatal-error" class="fatal-error" role="alert" hidden></p>
       </div>
     </section>
-    <section id="outro" class="outro"></section>
+    <section id="process" class="process" aria-label="How it works" hidden></section>
+    <section id="outro" class="outro" hidden></section>
   </main>
   <footer class="footer">
     <span id="footer-brand"></span>
