@@ -320,11 +320,12 @@ function validateSectionMedia(media, path, addError) {
   }
 }
 
-function validateSection(section, path, addError) {
+function validateSection(section, path, addError, overlayCount) {
   if (!section || typeof section !== 'object' || Array.isArray(section)) {
     addError('section.type', path, 'Section must be an object.');
     return;
   }
+  if (section.navLabel !== undefined && !nonEmptyString(section.navLabel)) addError('section.nav-label', path + '.navLabel', 'navLabel must be non-empty.');
   if (!SECTION_TYPES.includes(section.type)) {
     addError('section.type', path + '.type', 'Section type is not supported.');
     return;
@@ -353,7 +354,7 @@ function validateSection(section, path, addError) {
         if (!nonEmptyString(row.value)) addError('spec.value', rowPath + '.value', 'Spec value is required.');
         if (row.beat !== undefined && (!Number.isInteger(row.beat) || row.beat < 0)) {
           addError('spec.beat', rowPath + '.beat', 'Spec beat must be a non-negative integer.');
-        }
+        } else if (row.beat !== undefined && (overlayCount === 0 || row.beat >= overlayCount)) addError('spec.beat-range', rowPath + '.beat', 'Spec beat must reference an overlay.');
       });
     }
   } else if (section.type === 'gallery') {
@@ -368,7 +369,7 @@ function validateSection(section, path, addError) {
         }
         if (item.src !== undefined && !safeImagePath(item.src)) addError('gallery.src', itemPath + '.src', 'Gallery image path is invalid.');
         if (item.src !== undefined && !nonEmptyString(item.alt)) addError('gallery.alt', itemPath + '.alt', 'Gallery image alt text is required.');
-        if (item.beat !== undefined && (!Number.isInteger(item.beat) || item.beat < 0)) addError('gallery.beat', itemPath + '.beat', 'Gallery beat must be a non-negative integer.');
+        if (item.beat !== undefined && (!Number.isInteger(item.beat) || item.beat < 0)) addError('gallery.beat', itemPath + '.beat', 'Gallery beat must be a non-negative integer.'); else if (item.beat !== undefined && (overlayCount === 0 || item.beat >= overlayCount)) addError('gallery.beat-range', itemPath + '.beat', 'Gallery beat must reference an overlay.');
       });
     }
   } else if (section.type === 'cta') {
@@ -378,6 +379,7 @@ function validateSection(section, path, addError) {
       else validateCta(section.cta, path + '.cta', addError);
     }
     if (section.emailCapture !== undefined && typeof section.emailCapture !== 'boolean') addError('section.email-capture', path + '.emailCapture', 'emailCapture must be a boolean.');
+    if (section.emailAction !== undefined && !safeHref(section.emailAction)) addError('section.email-action', path + '.emailAction', 'emailAction must be safe.');
     if (section.background !== undefined && !safeImagePath(section.background)) addError('section.background', path + '.background', 'CTA background must be a normalized image path.');
   }
 }
@@ -567,12 +569,31 @@ export function validateConfig(config) {
     } else {
       let scrubCount = 0;
       config.sections.forEach((section, index) => {
-        validateSection(section, 'sections[' + index + ']', addError);
+        validateSection(section, 'sections[' + index + ']', addError, overlays.length);
         if (section?.type === 'scrub-hero') scrubCount += 1;
       });
       if (scrubCount > 1) addError('sections.scrub-duplicate', 'sections', 'Only one scrub-hero section is allowed.');
     }
   }
+
+  const validBeat = (beat) => Number.isInteger(beat) && beat >= 0 && beat < overlays.length;
+  if (config.hotspots !== undefined) {
+    if (!Array.isArray(config.hotspots)) addError('hotspots.type', 'hotspots', 'Hotspots must be an array.');
+    else config.hotspots.forEach((hotspot, index) => {
+      const path = 'hotspots[' + index + ']'; const point = hotspot?.point;
+      if (!Array.isArray(point) || point.length !== 2 || !point.every((value) => Number.isFinite(value) && value >= 0 && value <= 1)) addError('hotspot.point', path + '.point', 'Hotspot point is invalid.');
+      if (!validBeat(hotspot?.target)) addError('hotspot.target', path + '.target', 'Hotspot target must reference an overlay.');
+      if (!nonEmptyString(hotspot?.label)) addError('hotspot.label', path + '.label', 'Hotspot label is required.');
+    });
+  }
+  if (config.config !== undefined) {
+    const picker = config.config;
+    if (!picker || typeof picker !== 'object' || Array.isArray(picker)) addError('config.type', 'config', 'Config must be an object.');
+    else if (!Array.isArray(picker.options) || !picker.options.length) addError('config.options', 'config.options', 'Config needs options.');
+    else { const ids = new Set(); picker.options.forEach((option, index) => { const path = 'config.options[' + index + ']'; if (!nonEmptyString(option?.id)) addError('config.id', path + '.id', 'Config id is required.'); else if (ids.has(option.id)) addError('config.id-duplicate', path + '.id', 'Config ids must be unique.'); else ids.add(option.id); if (!nonEmptyString(option?.label)) addError('config.label', path + '.label', 'Config label is required.'); if (option?.poster !== undefined && !safeImagePath(option.poster)) addError('config.poster', path + '.poster', 'Config poster is invalid.'); if (option?.src !== undefined && !safeVideoPath(option.src)) addError('config.src', path + '.src', 'Config src is invalid.'); if (option?.tint !== undefined && !parseColor(option.tint)) addError('config.tint', path + '.tint', 'Config tint is invalid.'); }); if (config.register === 'full3d') warnings.push(issue('config.register', 'config', 'Config picker does not render for full3d.')); }
+  }
+  const jump = config.scrub?.jump;
+  if (jump !== undefined) { const valid = (value) => value === undefined || (Number.isFinite(value) && value > 0); if (!jump || typeof jump !== 'object' || Array.isArray(jump) || !valid(jump.minMs) || !valid(jump.maxMs) || !valid(jump.pxPerMs) || (jump.minMs ?? 500) > (jump.maxMs ?? 1400)) addError('scrub.jump', 'scrub.jump', 'Jump tuning is invalid.'); }
   return { errors, warnings };
 }
 

@@ -208,8 +208,8 @@ const sectionsConfig = {
     { type: 'scrub-hero' },
     { type: 'feature-split', headline: 'Fixture feature', side: 'right', media: { kind: 'image', src: 'frames/frame-0001.webp', alt: 'Fixture media' } },
     { type: 'statement', text: 'Fixture statement' },
-    { type: 'spec', headline: 'Fixture spec', rows: [{ label: 'Battery', value: '18 h', beat: 1 }] },
-    { type: 'gallery', headline: 'Fixture gallery', items: [{ src: 'frames/frame-0001.webp', alt: 'Fixture gallery image', beat: 1 }] },
+    { type: 'spec', headline: 'Fixture spec', rows: [{ label: 'Battery', value: '18 h', beat: 0 }] },
+    { type: 'gallery', headline: 'Fixture gallery', items: [{ src: 'frames/frame-0001.webp', alt: 'Fixture gallery image', beat: 0 }] },
     { type: 'cta', headline: 'Fixture CTA', cta: { label: 'Finish', href: '#finish' }, emailCapture: true, background: 'frames/frame-0001.webp' },
   ],
 };

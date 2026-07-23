@@ -598,3 +598,13 @@ describe('beatTargetY', () => {
   it('is the inverse of scrollProgress at the beat midpoint', () => { const y = beatTargetY([0.4, 0.6], 800, 3000, 900); expect(y).toBe(1850); expect(scrollProgress(y, 800, 3000, 900)).toBeCloseTo(.5, 10); });
   it('returns sectionTop when section has no scroll distance', () => { expect(beatTargetY([0, 1], 800, 900, 900)).toBe(800); });
 });
+describe('validateConfig interactions', () => {
+  const base = () => structuredClone(validConfig);
+  it('accepts optional interaction fields when valid', () => {
+    const c = base(); c.hotspots = [{ point: [.6,.4], target: 0, label: 'Cell' }]; c.config = { options: [{ id: 'a', label: 'A', tint: '#333333' }] }; c.scrub.jump = { pxPerMs: 3 }; c.sections = [{ type: 'scrub-hero', navLabel: 'Top' }, { type: 'cta', headline: 'Go', emailAction: '#go' }]; expect(validateConfig(c).errors).toEqual([]);
+  });
+  it('rejects invalid interaction schema and beat references', () => {
+    const c = base(); c.hotspots = [{ point: [2, 0], target: 9, label: ' ' }]; c.config = { options: [{ id: 'a', label: 'A' }, { id: 'a', label: '', poster: '../x.webp', src: 'media/x.txt', tint: 'blurple' }] }; c.scrub.jump = { minMs: 9, maxMs: 1 }; c.sections = [{ type: 'scrub-hero', navLabel: ' ' }, { type: 'spec', rows: [{ label: 'L', value: 'V', beat: 9 }] }, { type: 'gallery', items: [{ beat: 9 }] }, { type: 'cta', headline: 'Go', emailAction: 'javascript:x' }]; const codes = validateConfig(c).errors.map((x) => x.code); expect(codes).toEqual(expect.arrayContaining(['hotspot.point','hotspot.target','hotspot.label','config.id-duplicate','config.label','config.poster','config.src','config.tint','scrub.jump','section.nav-label','spec.beat-range','gallery.beat-range','section.email-action']));
+  });
+  it('warns when a picker is supplied for full3d', () => { const c = base(); c.register='full3d'; c.archetype='teardown'; c.direction='technical'; c.config={ options:[{id:'a',label:'A'}]}; const r=validateConfig(c); expect(r.errors).toEqual([]); expect(r.warnings).toContainEqual(expect.objectContaining({code:'config.register'})); });
+});
