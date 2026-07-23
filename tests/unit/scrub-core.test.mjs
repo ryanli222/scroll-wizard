@@ -9,8 +9,10 @@ import {
   frameFilename,
   holdFrames,
   lingerEase,
+  nearestOverlayIndex,
   overlayOpacity,
   progressToFrame,
+  progressToScrollY,
   progressToTime,
   recommendHeightVh,
   scrollProgress,
@@ -80,6 +82,46 @@ describe('scrub mapping', () => {
   });
 });
 
+describe('beat nav helpers', () => {
+  it('inverts scrollProgress exactly', () => {
+    const scrollY = progressToScrollY(0.4, 100, 500, 100);
+    expect(scrollY).toBeCloseTo(260);
+    expect(scrollProgress(scrollY, 100, 500, 100)).toBeCloseTo(0.4);
+  });
+
+  it('clamps progress and falls back to sectionTop for a degenerate section', () => {
+    expect(progressToScrollY(2, 0, 500, 100)).toBe(500);
+    expect(progressToScrollY(-1, 0, 500, 100)).toBe(0);
+    expect(progressToScrollY(0.5, 10, 100, 100)).toBe(10);
+  });
+
+  const beats = [
+    { at: [0, 0.2] },
+    { at: [0.2, 0.4] },
+    { at: [0.4, 0.6] },
+  ];
+
+  it('finds the beat containing the current progress', () => {
+    expect(nearestOverlayIndex(0.1, beats)).toBe(0);
+    expect(nearestOverlayIndex(0.3, beats)).toBe(1);
+    expect(nearestOverlayIndex(0.6, beats)).toBe(2);
+  });
+
+  it('falls back to the closest preceding beat across a gap', () => {
+    const withGap = [{ at: [0, 0.2] }, { at: [0.5, 0.7] }];
+    expect(nearestOverlayIndex(0.3, withGap)).toBe(0);
+  });
+
+  it('falls back to beat 0 before the first beat starts', () => {
+    expect(nearestOverlayIndex(0.1, [{ at: [0.3, 0.5] }])).toBe(0);
+  });
+
+  it('returns -1 for no overlays', () => {
+    expect(nearestOverlayIndex(0.5, [])).toBe(-1);
+    expect(nearestOverlayIndex(0.5, null)).toBe(-1);
+  });
+});
+
 describe('geometry and filenames', () => {
   it('computes centered cover crops and capped backing sizes', () => {
     expect(coverRect(1600, 900, 1000, 1000)).toEqual({
@@ -118,6 +160,17 @@ describe('colors and config validation', () => {
 
   it('accepts a complete valid config', () => {
     expect(validateConfig(validConfig)).toEqual({ errors: [], warnings: [] });
+  });
+
+  it('accepts a valid nav flag and rejects a non-boolean one', () => {
+    expect(validateConfig({ ...validConfig, nav: true }).errors).toEqual([]);
+    expect(validateConfig({ ...validConfig, nav: false }).errors).toEqual([]);
+    const result = validateConfig({ ...validConfig, nav: 'yes' });
+    expect(result.errors).toContainEqual({
+      code: 'nav.type',
+      path: 'nav',
+      message: 'Nav must be a boolean.',
+    });
   });
 
   it('rejects unsafe and inaccessible values', () => {

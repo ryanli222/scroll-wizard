@@ -6,8 +6,10 @@ import {
   decodeWindow,
   frameFilename,
   lingerEase,
+  nearestOverlayIndex,
   overlayOpacity,
   progressToFrame,
+  progressToScrollY,
   progressToTime,
   scrollProgress,
   selectScrubMode,
@@ -26,6 +28,7 @@ const outro = document.getElementById('outro');
 const fatalError = document.getElementById('fatal-error');
 const footerBrand = document.getElementById('footer-brand');
 const progressBar = document.getElementById('progress-bar');
+const beatNav = document.getElementById('beat-nav');
 
 // 849-byte, single-frame 16x16 baseline H.264 MP4. It gives iOS a local,
 // playable source for gesture priming without fetching the configured video.
@@ -98,6 +101,50 @@ function renderCopy(config) {
   renderOutro(config.outro);
   footerBrand.textContent = config.brand.name;
   return overlayNodes;
+}
+
+function jumpTo(overlayData) {
+  // ponytail: land a little past the beat's exact start (5% into its range)
+  // rather than right on it. Contiguous beats (a.at[1] === b.at[0], the
+  // common no-gap authoring style) share that exact progress value, and
+  // landing exactly there both (a) ties with nearestOverlayIndex's
+  // first-match-wins rule, which would highlight the *previous* beat, and
+  // (b) sits at 0 on this beat's own fade-in ramp, leaving it still inert.
+  const [start, end] = overlayData.at;
+  const nudged = start + (end - start) * 0.05;
+  const target = progressToScrollY(
+    nudged, scrub.offsetTop, scrub.offsetHeight, innerHeight,
+  );
+  if (lenisInstance) {
+    lenisInstance.scrollTo(target, { immediate: false });
+  } else {
+    window.scrollTo({ top: target, behavior: 'smooth' });
+  }
+}
+
+function renderNav(config, overlayNodes) {
+  if (config.nav !== true) return [];
+  const navItems = overlayNodes
+    .map(({ data }, index) => ({ data, index }))
+    .filter(({ data }) => typeof data.title === 'string' && data.title.trim())
+    .map(({ data, index }) => {
+      const button = element('button', 'beat-nav__item', data.title);
+      button.type = 'button';
+      button.dataset.navIndex = String(index);
+      button.addEventListener('click', () => jumpTo(data));
+      beatNav.append(button);
+      return { index, node: button };
+    });
+  if (navItems.length) beatNav.hidden = false;
+  return navItems;
+}
+
+function updateNav(navItems, config, raw) {
+  if (!navItems.length) return;
+  const current = nearestOverlayIndex(raw, config.overlays ?? []);
+  for (const { index, node } of navItems) {
+    node.classList.toggle('is-active', index === current);
+  }
 }
 
 function showFatalError(error) {
@@ -324,6 +371,7 @@ function drawCover(context, source) {
 
 let store = null;
 let lastDrawnIndex = -1;
+let lenisInstance = null;
 let scrubProgressDebug = 0;
 let seekEpsilonDebug = 0;
 let videoDurationDebug = 0;
@@ -357,7 +405,7 @@ function updateProgressBar() {
   progressBar.style.width = (pageProgress * 100) + '%';
 }
 
-function runEngine(config, overlayNodes) {
+function runEngine(config, overlayNodes, navItems) {
   const holds = (config.overlays ?? [])
     .filter((overlay) => overlay.hold)
     .map((overlay) => overlay.at);
@@ -416,6 +464,7 @@ function runEngine(config, overlayNodes) {
 
     updateOverlays(overlayNodes, raw);
     updateProgressBar();
+    updateNav(navItems, config, raw);
 
     requestAnimationFrame(tick);
   }
@@ -485,7 +534,7 @@ function installVideoPrime(video) {
   return cleanup;
 }
 
-function runVideoEngine(config, overlayNodes, video) {
+function runVideoEngine(config, overlayNodes, video, navItems) {
   const holds = (config.overlays ?? [])
     .filter((overlay) => overlay.hold)
     .map((overlay) => overlay.at);
@@ -557,6 +606,7 @@ function runVideoEngine(config, overlayNodes, video) {
     }
     updateOverlays(overlayNodes, raw);
     updateProgressBar();
+    updateNav(navItems, config, raw);
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
@@ -569,6 +619,7 @@ async function start() {
 
   let config;
   let overlayNodes;
+  let navItems;
   let removeVideoPrime = () => {};
   try {
     const response = await fetch('config.json', { cache: 'no-store' });
@@ -603,9 +654,11 @@ async function start() {
     return;
   }
 
+  navItems = renderNav(config, overlayNodes);
+
   if (globalThis.Lenis) {
     try {
-      new globalThis.Lenis({ autoRaf: true, anchors: true });
+      lenisInstance = new globalThis.Lenis({ autoRaf: true, anchors: true });
     } catch (error) {
       console.warn('Lenis failed to initialize:', error.message);
     }
@@ -620,9 +673,9 @@ async function start() {
       showFatalError(error);
       return;
     }
-    runVideoEngine(config, overlayNodes, video);
+    runVideoEngine(config, overlayNodes, video, navItems);
   } else {
-    runEngine(config, overlayNodes);
+    runEngine(config, overlayNodes, navItems);
   }
 }
 
