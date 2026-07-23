@@ -412,3 +412,44 @@ describe('validateConfig v2', () => {
     expect(selectScrubMode(config)).toBe('video');
   });
 });
+
+describe('validateConfig register/direction', () => {
+  const base = () => structuredClone(validConfig);
+
+  it('accepts a config with no register/direction (v2 back-compat)', () => {
+    const { errors } = validateConfig(base());
+    expect(errors).toEqual([]);
+  });
+
+  it('accepts product register without archetype', () => {
+    const { errors } = validateConfig({ ...base(), register: 'product', direction: 'minimal' });
+    expect(errors).toEqual([]);
+  });
+
+  it('rejects an unknown register', () => {
+    const { errors } = validateConfig({ ...base(), register: 'hologram' });
+    expect(errors.some((e) => e.code === 'register.enum')).toBe(true);
+  });
+
+  it('requires archetype when register is full3d', () => {
+    const { errors } = validateConfig({ ...base(), register: 'full3d', direction: 'cinematic' });
+    expect(errors.some((e) => e.code === 'archetype.required')).toBe(true);
+  });
+
+  it('accepts full3d with a valid archetype', () => {
+    const { errors } = validateConfig({
+      ...base(), register: 'full3d', archetype: 'teardown', direction: 'technical',
+    });
+    expect(errors).toEqual([]);
+  });
+
+  it('rejects an unknown archetype', () => {
+    const { errors } = validateConfig({ ...base(), register: 'full3d', archetype: 'zoom' });
+    expect(errors.some((e) => e.code === 'archetype.enum')).toBe(true);
+  });
+
+  it('rejects an unknown direction', () => {
+    const { errors } = validateConfig({ ...base(), direction: 'brutalist' });
+    expect(errors.some((e) => e.code === 'direction.enum')).toBe(true);
+  });
+});

@@ -278,6 +278,30 @@ export function validateConfig(config) {
     addError('brand.name', 'brand.name', 'Brand name is required.');
   }
 
+  const REGISTERS = ['full3d', 'product'];
+  const ARCHETYPES = ['flythrough', 'walkthrough', 'teardown'];
+  const DIRECTIONS = ['minimal', 'cinematic', 'technical', 'bold'];
+
+  if (config.register !== undefined && !REGISTERS.includes(config.register)) {
+    addError('register.enum', 'register', 'Register must be "full3d" or "product".');
+  }
+  if (config.register === 'full3d') {
+    if (config.archetype === undefined) {
+      addError('archetype.required', 'archetype',
+        'Archetype is required when register is "full3d".');
+    } else if (!ARCHETYPES.includes(config.archetype)) {
+      addError('archetype.enum', 'archetype',
+        'Archetype must be flythrough, walkthrough, or teardown.');
+    }
+  } else if (config.archetype !== undefined && !ARCHETYPES.includes(config.archetype)) {
+    addError('archetype.enum', 'archetype',
+      'Archetype must be flythrough, walkthrough, or teardown.');
+  }
+  if (config.direction !== undefined && !DIRECTIONS.includes(config.direction)) {
+    addError('direction.enum', 'direction',
+      'Direction must be minimal, cinematic, technical, or bold.');
+  }
+
   const theme = config.theme ?? {};
   const colors = {};
   for (const key of ['bg', 'text', 'accent', 'surface']) {
