@@ -493,7 +493,7 @@ test('phone viewport supports coarse short landscape with the same video media',
     await page.waitForFunction(() =>
       window.__SCROLL_WIZARD_DEBUG__?.videoTime > 0.2);
     const layout = await page.evaluate(() => {
-      const overlay = document.querySelector('[data-overlay-index="0"]');
+      const overlay = document.querySelector('[data-overlay-index="0"] .overlay__content');
       const rect = overlay.getBoundingClientRect();
       const style = getComputedStyle(overlay);
       return {
@@ -537,8 +537,9 @@ test('phone viewport keeps tall landscape overlay content reachable', async ({ b
     await page.waitForSelector('#loader', { state: 'hidden' });
     await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.4));
     const overlay = page.locator('[data-overlay-index="0"]');
+    const content = overlay.locator('.overlay__content');
     await expect(overlay).toHaveJSProperty('inert', false);
-    const initial = await overlay.evaluate((node) => {
+    const initial = await content.evaluate((node) => {
       const rect = node.getBoundingClientRect();
       const title = node.querySelector('.overlay__title').getBoundingClientRect();
       return {
@@ -556,8 +557,8 @@ test('phone viewport keeps tall landscape overlay content reachable', async ({ b
     expect(initial.title.top).toBeGreaterThanOrEqual(initial.rect.top);
     expect(initial.title.bottom).toBeLessThanOrEqual(initial.rect.bottom);
 
-    await overlay.evaluate((node) => { node.scrollTop = node.scrollHeight; });
-    const reachable = await overlay.evaluate((node) => {
+    await content.evaluate((node) => { node.scrollTop = node.scrollHeight; });
+    const reachable = await content.evaluate((node) => {
       const rect = node.getBoundingClientRect();
       const stats = node.querySelector('.stats').getBoundingClientRect();
       const cta = node.querySelector('.overlay__cta').getBoundingClientRect();
@@ -602,8 +603,9 @@ test('phone viewport keeps tall portrait overlay content reachable', async ({ br
       scrollTo(0, scrub.offsetTop + (scrub.offsetHeight - innerHeight) * 0.4);
     });
     const overlay = page.locator('[data-overlay-index="0"]');
+    const content = overlay.locator('.overlay__content');
     await expect(overlay).toHaveJSProperty('inert', false);
-    const initial = await overlay.evaluate((node) => {
+    const initial = await content.evaluate((node) => {
       const rect = node.getBoundingClientRect();
       const title = node.querySelector('.overlay__title').getBoundingClientRect();
       return {
@@ -621,8 +623,8 @@ test('phone viewport keeps tall portrait overlay content reachable', async ({ br
     expect(initial.title.top).toBeGreaterThanOrEqual(initial.rect.top);
     expect(initial.title.bottom).toBeLessThanOrEqual(initial.rect.bottom);
 
-    await overlay.evaluate((node) => { node.scrollTop = node.scrollHeight; });
-    const reachable = await overlay.evaluate((node) => {
+    await content.evaluate((node) => { node.scrollTop = node.scrollHeight; });
+    const reachable = await content.evaluate((node) => {
       const rect = node.getBoundingClientRect();
       const stats = node.querySelector('.stats').getBoundingClientRect();
       const cta = node.querySelector('.overlay__cta').getBoundingClientRect();

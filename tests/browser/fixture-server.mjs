@@ -4,7 +4,7 @@
 // fixture binaries checked into the repo.
 import { createServer } from 'node:http';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, normalize } from 'node:path';
@@ -12,6 +12,26 @@ import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
 
 const templateDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'template');
+const directionPresets = JSON.parse(readFileSync(
+  join(templateDir, '..', 'references', 'directions.json'), 'utf8',
+));
+
+function applyDirection(configValue, direction) {
+  const preset = directionPresets[direction];
+  return {
+    ...configValue,
+    direction,
+    theme: {
+      ...preset.theme,
+      fonts: { ...preset.theme.fonts },
+    },
+    directionPreset: {
+      motion: { ...preset.motion },
+      chromeStyle: preset.chromeStyle,
+      scrimStrength: preset.scrimStrength,
+    },
+  };
+}
 const videoFixtureDir = mkdtempSync(join(tmpdir(), 'scroll-wizard-video-'));
 const videoPath = join(videoFixtureDir, 'video.webm');
 const videoPosterPath = join(videoFixtureDir, 'poster.webp');
@@ -110,28 +130,70 @@ const config = {
   ],
 };
 
-const variantsConfig = {
+const variantOverlays = [
+  {
+    at: [0.05, 0.95],
+    title: 'Fixture bare',
+    body: 'Bare body copy over representative footage.',
+    kicker: 'Coordinate A',
+    showIndex: true,
+    position: 'left',
+    variant: 'bare',
+    anchor: 'top',
+    stats: [{ value: '18 h', label: 'Battery' }],
+    cta: { label: 'Primary action', href: '#primary' },
+  },
+  {
+    at: [0.05, 0.95],
+    title: 'Fixture hero',
+    body: 'Large centered type for the hero variant.',
+    position: 'center',
+    variant: 'hero',
+    anchor: 'middle',
+  },
+  {
+    at: [0.05, 0.95],
+    title: 'Fixture caption',
+    body: 'Understated caption copy.',
+    position: 'right',
+    variant: 'caption',
+    anchor: 'bottom',
+  },
+  {
+    at: [0.05, 0.95],
+    title: '98%',
+    body: 'Measured efficiency.',
+    position: 'right',
+    variant: 'metric',
+    anchor: 'top',
+  },
+  {
+    at: [0.05, 0.95],
+    title: 'Fixture panel',
+    body: 'The sole backdrop-filter surface.',
+    position: 'left',
+    variant: 'panel',
+    anchor: 'middle',
+  },
+  {
+    at: [0.05, 0.95],
+    title: 'Fixture annotation',
+    body: 'Pinned to a normalized point on the source.',
+    position: 'center',
+    variant: 'annotation',
+    anchor: 'bottom',
+    point: [0.8, 0.35],
+  },
+];
+
+const variantsConfig = applyDirection({
   ...config,
-  direction: 'technical',
-  overlays: [
-    {
-      at: [0.05, 0.95],
-      title: 'Fixture hero',
-      body: 'Large centered type for the hero variant.',
-      position: 'center',
-      variant: 'hero',
-      anchor: 'middle',
-    },
-    {
-      at: [0.05, 0.95],
-      title: 'Fixture annotation',
-      body: 'Pinned to a normalized point on the source.',
-      position: 'right',
-      variant: 'annotation',
-      anchor: 'middle',
-      point: [0.8, 0.35],
-    },
-  ],
+  overlays: variantOverlays,
+}, 'technical');
+
+const rawCinematicConfig = {
+  ...config,
+  direction: 'cinematic',
 };
 
 const videoConfig = {
@@ -144,6 +206,11 @@ const videoConfig = {
   },
 };
 delete videoConfig.frames;
+
+const videoVariantsConfig = applyDirection({
+  ...videoConfig,
+  overlays: variantOverlays,
+}, 'technical');
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -192,11 +259,19 @@ const server = createServer(async (req, res) => {
   if (pathname === '/config.json' || pathname === '/video/config.json') {
     const isVideo = pathname.startsWith('/video/');
     let selectedConfig = isVideo ? videoConfig : config;
-    if (!isVideo && req.headers.referer) {
+    if (req.headers.referer) {
       try {
         const referrer = new URL(req.headers.referer);
-        if (referrer.searchParams.get('config') === 'variants') {
-          selectedConfig = variantsConfig;
+        const requestedFixture = referrer.searchParams.get('config');
+        if (requestedFixture === 'variants') {
+          if (isVideo) {
+            selectedConfig = videoVariantsConfig;
+          } else {
+            const direction = referrer.searchParams.get('direction') ?? 'technical';
+            selectedConfig = applyDirection(variantsConfig, direction);
+          }
+        } else if (!isVideo && requestedFixture === 'raw-cinematic') {
+          selectedConfig = rawCinematicConfig;
         }
       } catch {
         // Ignore malformed referrers and keep the default deterministic fixture.

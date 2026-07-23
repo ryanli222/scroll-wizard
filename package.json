@@ -17,6 +17,7 @@
   "files": [
     "scripts/",
     "template/",
+    "references/",
     "SKILL.md",
     "README.md",
     "THIRD_PARTY_LICENSES.md"

@@ -27,9 +27,19 @@ const outro = document.getElementById('outro');
 const fatalError = document.getElementById('fatal-error');
 const footerBrand = document.getElementById('footer-brand');
 const progressBar = document.getElementById('progress-bar');
-let currentConfig = null;
 
-const DIRECTION_TRAVEL = { minimal: 16, cinematic: 12, technical: 0, bold: 24 };
+// Raw, hand-authored v2 configs do not carry generated directionPreset data.
+// Give only those legacy configs the calm minimal runtime; scaffolded configs
+// always serialize the selected references/directions.json preset instead.
+const LEGACY_DIRECTION_RUNTIME = Object.freeze({
+  motion: Object.freeze({
+    ease: 'cubic-bezier(0.23, 1, 0.32, 1)',
+    springBounce: 0,
+    revealTravelPx: 16,
+  }),
+  chromeStyle: 'quiet',
+  scrimStrength: 0.5,
+});
 
 // 849-byte, single-frame 16x16 baseline H.264 MP4. It gives iOS a local,
 // playable source for gesture priming without fetching the configured video.
@@ -60,17 +70,18 @@ function renderOverlay(data, index, total) {
   if (data.showIndex) classes.push('overlay--show-index');
   if (data.kicker) classes.push('overlay--show-kicker');
   const panel = element('article', classes.join(' '));
+  const content = element('div', 'overlay__content');
   panel.dataset.overlayIndex = String(index);
   panel.inert = true;
-  panel.append(element('span', 'overlay__index',
+  content.append(element('span', 'overlay__index',
     String(index + 1).padStart(2, '0') + ' / ' + String(total).padStart(2, '0')));
   if (variant === 'annotation') {
     panel.dataset.point = JSON.stringify(data.point);
-    panel.prepend(element('span', 'overlay__leader'));
+    panel.append(element('span', 'overlay__leader'));
   }
-  if (data.kicker) panel.append(element('span', 'overlay__kicker', data.kicker));
-  if (data.title) panel.append(element('h2', 'overlay__title', data.title));
-  if (data.body) panel.append(element('p', 'overlay__body', data.body));
+  if (data.kicker) content.append(element('span', 'overlay__kicker', data.kicker));
+  if (data.title) content.append(element('h2', 'overlay__title', data.title));
+  if (data.body) content.append(element('p', 'overlay__body', data.body));
   if (data.stats?.length) {
     const list = element('div', 'stats');
     for (const stat of data.stats) {
@@ -81,9 +92,10 @@ function renderOverlay(data, index, total) {
       );
       list.append(chip);
     }
-    panel.append(list);
+    content.append(list);
   }
-  if (data.cta) panel.append(linkButton(data.cta, 'overlay__cta'));
+  if (data.cta) content.append(linkButton(data.cta, 'overlay__cta'));
+  panel.append(content);
   return panel;
 }
 
@@ -96,20 +108,36 @@ function renderOutro(data) {
 
 function applyTheme(config) {
   const theme = config.theme;
+  const runtime = config.directionPreset ?? LEGACY_DIRECTION_RUNTIME;
+  const motion = runtime.motion ?? LEGACY_DIRECTION_RUNTIME.motion;
   const root = document.documentElement.style;
   root.setProperty('--bg', theme.bg);
   root.setProperty('--text', theme.text);
+  root.setProperty('--muted', theme.muted ?? theme.text);
   root.setProperty('--accent', theme.accent);
   root.setProperty('--surface', theme.surface);
   root.setProperty('--radius', theme.radius + 'px');
+  root.setProperty('--border-style', theme.borderStyle ?? 'solid');
   if (theme.fonts?.display) root.setProperty('--display', theme.fonts.display);
   if (theme.fonts?.body) root.setProperty('--body', theme.fonts.body);
+  if (theme.fonts?.mono) root.setProperty('--mono', theme.fonts.mono);
+  root.setProperty('--ease', motion.ease ?? LEGACY_DIRECTION_RUNTIME.motion.ease);
+  root.setProperty('--spring-bounce', String(
+    motion.springBounce ?? LEGACY_DIRECTION_RUNTIME.motion.springBounce,
+  ));
+  root.setProperty('--reveal-travel', String(
+    motion.revealTravelPx ?? LEGACY_DIRECTION_RUNTIME.motion.revealTravelPx,
+  ) + 'px');
+  root.setProperty('--scrim-strength', String(
+    runtime.scrimStrength ?? LEGACY_DIRECTION_RUNTIME.scrimStrength,
+  ));
+  root.setProperty(
+    '--chrome-style', runtime.chromeStyle ?? LEGACY_DIRECTION_RUNTIME.chromeStyle,
+  );
   const direction = config.direction ?? 'minimal';
   document.body.classList.add('dir-' + direction);
-  root.setProperty(
-    '--reveal-travel',
-    (DIRECTION_TRAVEL[direction] ?? DIRECTION_TRAVEL.minimal) + 'px',
-  );
+  document.body.dataset.chromeStyle = runtime.chromeStyle
+    ?? LEGACY_DIRECTION_RUNTIME.chromeStyle;
   scrub.style.setProperty('height', config.scrub.heightVh + 'vh');
 }
 
@@ -122,37 +150,7 @@ function renderCopy(config) {
   });
   renderOutro(config.outro);
   footerBrand.textContent = config.brand.name;
-  renderChrome(config);
   return overlayNodes;
-}
-
-function renderChrome(config) {
-  const brandName = document.getElementById('brand-name');
-  if (brandName) brandName.textContent = config.brand.name;
-  const nav = document.getElementById('chrome-nav');
-  if (nav) {
-    (config.overlays ?? []).forEach((data, index) => {
-      const label = data.kicker ?? data.title;
-      if (!label) return;
-      const pill = element('button', 'chrome__pill', label);
-      pill.type = 'button';
-      pill.dataset.targetOverlayIndex = String(index);
-      pill.addEventListener('click', () => {
-        // ponytail: linear scroll target ignores hold warping; hold plateaus
-        // are wide enough that the landing sits inside the beat.
-        const mid = (data.at[0] + data.at[1]) / 2;
-        const top = scrub.offsetTop + mid * (scrub.offsetHeight - innerHeight);
-        scrollTo({ top, behavior: 'smooth' });
-      });
-      nav.append(pill);
-    });
-  }
-  const cta = document.getElementById('chrome-cta');
-  if (cta && config.outro?.cta) {
-    cta.textContent = config.outro.cta.label;
-    cta.href = config.outro.cta.href;
-    cta.hidden = false;
-  }
 }
 
 function showFatalError(error) {
@@ -208,7 +206,8 @@ function applyReducedMotion(overlayNodes) {
   for (const { node } of overlayNodes) {
     node.inert = false;
     node.style.opacity = '1';
-    node.style.pointerEvents = '';
+    node.style.setProperty('--reveal', '1');
+    node.style.pointerEvents = 'none';
   }
 }
 
@@ -386,14 +385,24 @@ function positionAnnotations(sourceW, sourceH, boxW, boxH) {
       continue;
     }
     const { x, y } = pointToPixel(point, sourceW, sourceH, boxW, boxH);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    const rect = node.getBoundingClientRect();
-    const boxRect = node.offsetParent?.getBoundingClientRect()
-      ?? { left: 0, top: 0 };
-    const dx = x - (rect.left - boxRect.left);
-    const dy = y - (rect.top - boxRect.top);
-    node.style.setProperty('--px', x.toFixed(1));
-    node.style.setProperty('--py', y.toFixed(1));
+    const content = node.querySelector('.overlay__content');
+    if (!content || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+
+    // offset* is layout geometry before the reveal transform. Basing the leader
+    // on it keeps the endpoint stable while the inner label animates.
+    const left = content.offsetLeft;
+    const top = content.offsetTop;
+    const right = left + content.offsetWidth;
+    const bottom = top + content.offsetHeight;
+    const startX = x >= (left + right) / 2 ? right : left;
+    const startY = Math.min(bottom - 8, Math.max(top + 8, y));
+    const dx = x - startX;
+    const dy = y - startY;
+
+    node.style.setProperty('--px', x.toFixed(1) + 'px');
+    node.style.setProperty('--py', y.toFixed(1) + 'px');
+    node.style.setProperty('--leader-x', startX.toFixed(1) + 'px');
+    node.style.setProperty('--leader-y', startY.toFixed(1) + 'px');
     node.style.setProperty('--leader-len', Math.hypot(dx, dy).toFixed(1) + 'px');
     node.style.setProperty(
       '--leader-angle',
@@ -427,7 +436,9 @@ function updateOverlays(overlayNodes, raw) {
     node.style.setProperty('--reveal', String(opacity));
     const visible = opacity >= 0.05;
     node.inert = !visible;
-    node.style.pointerEvents = visible ? 'auto' : 'none';
+    node.style.pointerEvents = 'none';
+    const content = node.querySelector('.overlay__content');
+    if (content) content.style.pointerEvents = visible ? 'auto' : 'none';
   }
 }
 
@@ -435,21 +446,6 @@ function updateProgressBar() {
   const pageProgress = Math.min(1, Math.max(0,
     scrollY / Math.max(1, document.documentElement.scrollHeight - innerHeight)));
   progressBar.style.transform = 'scaleX(' + pageProgress + ')';
-  updateChrome();
-}
-
-function updateChrome() {
-  const hint = document.getElementById('scroll-hint');
-  if (hint) hint.classList.toggle('is-hidden', scrollY > 40);
-  const pills = document.querySelectorAll('.chrome__pill');
-  if (!pills.length) return;
-  const fraction = Math.min(1, Math.max(0,
-    (scrollY - scrub.offsetTop) / Math.max(1, scrub.offsetHeight - innerHeight)));
-  for (const pill of pills) {
-    const range = currentConfig?.overlays?.[Number(pill.dataset.targetOverlayIndex)]?.at;
-    pill.classList.toggle('is-active',
-      Boolean(range) && fraction >= range[0] && fraction <= range[1]);
-  }
 }
 
 function runEngine(config, overlayNodes) {
@@ -682,7 +678,6 @@ async function start() {
     const response = await fetch('config.json', { cache: 'no-store' });
     if (!response.ok) throw new Error('Config request failed: HTTP ' + response.status);
     config = await response.json();
-    currentConfig = config;
 
     const { errors, warnings } = validateConfig(config);
     if (errors.length) {

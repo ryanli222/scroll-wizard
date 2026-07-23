@@ -6,6 +6,9 @@ import { contrastRatio, validateConfig } from '../../template/scrub-core.js';
 const presets = JSON.parse(readFileSync(
   fileURLToPath(new URL('../../references/directions.json', import.meta.url)), 'utf8',
 ));
+const packageManifest = JSON.parse(readFileSync(
+  fileURLToPath(new URL('../../package.json', import.meta.url)), 'utf8',
+));
 
 const baseConfig = {
   brand: { name: 'Test' },
@@ -17,6 +20,10 @@ const baseConfig = {
 describe('directions.json', () => {
   it('defines all four directions', () => {
     expect(Object.keys(presets).sort()).toEqual(['bold', 'cinematic', 'minimal', 'technical']);
+  });
+
+  it('ships the runtime preset source in the npm package', () => {
+    expect(packageManifest.files).toContain('references/');
   });
 
   it('each preset theme passes validateConfig contrast rules', () => {
@@ -33,11 +40,36 @@ describe('directions.json', () => {
     }
   });
 
-  it('each preset declares motion + chrome fields', () => {
-    for (const preset of Object.values(presets)) {
-      expect(typeof preset.motion.ease).toBe('string');
-      expect(typeof preset.chromeStyle).toBe('string');
-      expect(typeof preset.scrimStrength).toBe('number');
+  it('declares the complete theme, motion, chrome, and scrim token contract', () => {
+    for (const [name, preset] of Object.entries(presets)) {
+      expect(preset.theme, name).toMatchObject({
+        bg: expect.any(String),
+        text: expect.any(String),
+        muted: expect.any(String),
+        accent: expect.any(String),
+        surface: expect.any(String),
+        radius: expect.any(Number),
+        borderStyle: expect.any(String),
+        fonts: {
+          display: expect.any(String),
+          body: expect.any(String),
+          mono: expect.any(String),
+        },
+      });
+      expect(preset.motion, name).toEqual({
+        ease: expect.any(String),
+        springBounce: expect.any(Number),
+        revealTravelPx: expect.any(Number),
+      });
+      expect(typeof preset.chromeStyle, name).toBe('string');
+      expect(preset.scrimStrength, name).toBeGreaterThanOrEqual(0);
+      expect(preset.scrimStrength, name).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('keeps every plain reveal damped with no spring bounce', () => {
+    for (const [name, preset] of Object.entries(presets)) {
+      expect(preset.motion.springBounce, name).toBe(0);
     }
   });
 });

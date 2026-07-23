@@ -209,26 +209,49 @@ describe('assembleConfig direction presets', () => {
   };
   const frameSet = { count: 24, pattern: 'frames/frame-{index:4}.webp', extension: 'webp' };
 
-  it('applies the cinematic preset font when direction is set', () => {
+  it('serializes the selected preset as runtime-consumable direction data', () => {
     const { config } = assembleConfig(defaults, {
       brand: { name: 'D' }, direction: 'cinematic',
     }, frameSet, null);
     expect(config.direction).toBe('cinematic');
     expect(config.theme.fonts.display).toMatch(/serif/i);
     expect(config.theme.accent).toBe('#c9b48a');
+    expect(config.theme.muted).toBeTruthy();
+    expect(config.theme.borderStyle).toBeTruthy();
+    expect(config.theme.fonts.mono).toBeTruthy();
+    expect(config.directionPreset).toEqual({
+      motion: {
+        ease: 'cubic-bezier(0.4, 0, 0.2, 1)',
+        springBounce: 0,
+        revealTravelPx: 12,
+      },
+      chromeStyle: 'meta-strip',
+      scrimStrength: 0.65,
+    });
   });
 
-  it('lets an explicit theme value override the preset', () => {
+  it('lets explicit nested and top-level theme values override the preset', () => {
     const { config } = assembleConfig(defaults, {
-      brand: { name: 'D' }, direction: 'cinematic', theme: { accent: '#ff0000' },
+      brand: { name: 'D' },
+      direction: 'cinematic',
+      theme: {
+        accent: '#ff0000',
+        muted: '#eeeeee',
+        borderStyle: 'dashed',
+        fonts: { mono: 'Explicit Mono' },
+      },
     }, frameSet, null);
     expect(config.theme.accent).toBe('#ff0000');
+    expect(config.theme.muted).toBe('#eeeeee');
+    expect(config.theme.borderStyle).toBe('dashed');
+    expect(config.theme.fonts.mono).toBe('Explicit Mono');
   });
 
   it('is unchanged when no direction is given', () => {
     const { config } = assembleConfig(defaults, { brand: { name: 'D' } }, frameSet, null);
     expect(config.theme.accent).toBe('#00ff00');
     expect(config.direction).toBeUndefined();
+    expect(config.directionPreset).toBeUndefined();
   });
 });
 

@@ -22,10 +22,11 @@ describe('package contract', () => {
     });
   });
 
-  it('ships the skill, scripts, template, readme, and third-party notice', () => {
+  it('ships the skill, scripts, template, preset references, readme, and notices', () => {
     expect(pkg.files).toEqual([
       'scripts/',
       'template/',
+      'references/',
       'SKILL.md',
       'README.md',
       'THIRD_PARTY_LICENSES.md',

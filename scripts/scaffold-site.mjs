@@ -90,6 +90,7 @@ export function assembleConfig(defaults, values, frameSet, mediaSet = null) {
   }
   const { posterIndex: _ignored, ...creative } = values;
   const brand = { ...defaults.brand, ...creative.brand };
+  const selectedDirection = DIRECTIONS[creative.direction];
   // Clarification: poster alt falls back imageAlt -> tagline -> "<name> hero scene".
   brand.imageAlt = brand.imageAlt || brand.tagline || (brand.name + ' hero scene');
   const config = {
@@ -98,16 +99,25 @@ export function assembleConfig(defaults, values, frameSet, mediaSet = null) {
     brand,
     theme: {
       ...defaults.theme,
-      ...(DIRECTIONS[creative.direction]?.theme ?? {}),
+      ...(selectedDirection?.theme ?? {}),
       ...creative.theme,
       fonts: {
         ...defaults.theme.fonts,
-        ...DIRECTIONS[creative.direction]?.theme?.fonts,
+        ...selectedDirection?.theme?.fonts,
         ...creative.theme?.fonts,
       },
     },
     scrub: { ...defaults.scrub, ...creative.scrub },
   };
+  if (selectedDirection) {
+    config.directionPreset = {
+      motion: { ...selectedDirection.motion },
+      chromeStyle: selectedDirection.chromeStyle,
+      scrimStrength: selectedDirection.scrimStrength,
+    };
+  } else {
+    delete config.directionPreset;
+  }
   if (videoMode) {
     if (!mediaSet) throw new Error('Video mode requires valid media.');
     delete config.frames;
