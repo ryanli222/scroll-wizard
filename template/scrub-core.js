@@ -136,6 +136,19 @@ export function recommendHeightVh(baseVh, holds = []) {
   };
 }
 
+export function jumpDuration(distancePx, jump = {}) {
+  const minMs = jump.minMs ?? 500;
+  const maxMs = jump.maxMs ?? 1400;
+  const pxPerMs = jump.pxPerMs ?? 2.2;
+  if (!Number.isFinite(distancePx)) return minMs;
+  return clamp(Math.abs(distancePx) / pxPerMs, minMs, maxMs);
+}
+
+export function beatTargetY(at, sectionTop, sectionHeight, viewportH) {
+  const distance = sectionHeight - viewportH;
+  if (!Number.isFinite(distance) || distance <= 0) return sectionTop;
+  return sectionTop + ((at[0] + at[1]) / 2) * distance;
+}
 export function decodeWindow(targetIndex, n, frameCount, direction = 0) {
   const count = Math.max(0, Math.trunc(frameCount));
   if (count === 0) return [];

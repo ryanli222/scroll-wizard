@@ -9,6 +9,8 @@ import {
   frameFilename,
   holdFrames,
   lingerEase,
+  jumpDuration,
+  beatTargetY,
   overlayOpacity,
   pointToPixel,
   progressToFrame,
@@ -584,3 +586,15 @@ describe('validateConfig sections', () => {
   });
 });
 
+
+describe('jumpDuration', () => {
+  it('scales with distance between the bounds', () => { expect(jumpDuration(2200)).toBe(1000); });
+  it('clamps to minMs and maxMs', () => { expect(jumpDuration(10)).toBe(500); expect(jumpDuration(1_000_000)).toBe(1400); });
+  it('uses absolute distance and tuning overrides', () => { expect(jumpDuration(-2200)).toBe(1000); expect(jumpDuration(10, { minMs: 100 })).toBe(100); expect(jumpDuration(2200, { pxPerMs: 1.1, maxMs: 3000 })).toBe(2000); });
+  it('returns minMs for non-finite distance', () => { expect(jumpDuration(NaN)).toBe(500); });
+});
+
+describe('beatTargetY', () => {
+  it('is the inverse of scrollProgress at the beat midpoint', () => { const y = beatTargetY([0.4, 0.6], 800, 3000, 900); expect(y).toBe(1850); expect(scrollProgress(y, 800, 3000, 900)).toBeCloseTo(.5, 10); });
+  it('returns sectionTop when section has no scroll distance', () => { expect(beatTargetY([0, 1], 800, 900, 900)).toBe(800); });
+});
