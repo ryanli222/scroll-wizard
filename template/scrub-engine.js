@@ -23,6 +23,7 @@ const overlayLayer = document.getElementById('overlay-layer');
 const loadProgress = document.getElementById('load-progress');
 const loader = document.getElementById('loader');
 const outro = document.getElementById('outro');
+const processSection = document.getElementById('process');
 const fatalError = document.getElementById('fatal-error');
 const footerBrand = document.getElementById('footer-brand');
 const progressBar = document.getElementById('progress-bar');
@@ -71,9 +72,37 @@ function renderOverlay(data, index) {
 
 function renderOutro(data) {
   if (!data) return;
+  outro.hidden = false;
   if (data.headline) outro.append(element('h1', 'outro__headline', data.headline));
   if (data.body) outro.append(element('p', 'outro__body', data.body));
   if (data.cta) outro.append(linkButton(data.cta, 'outro__cta'));
+}
+
+function renderProcess(config) {
+  if (!config.process) return;
+  const steps = config.process.steps.map((step, index) => {
+    const article = element('article', 'step');
+    article.dataset.reveal = '';
+    article.style.setProperty('--i', String(index));
+    article.append(element('h3', 'step__title', step.title));
+    article.append(element('p', 'step__body', step.body));
+    return article;
+  });
+  processSection.append(...steps);
+  processSection.hidden = false;
+}
+
+function initScrollReveal() {
+  const targets = document.querySelectorAll('[data-reveal]');
+  if (!targets.length) return;
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      entry.target.classList.add('is-visible');
+      observer.unobserve(entry.target);
+    }
+  }, { threshold: 0.25 });
+  targets.forEach((target) => observer.observe(target));
 }
 
 function applyTheme(config) {
@@ -591,6 +620,8 @@ async function start() {
     }
     await loadPoster(config);
     overlayNodes = renderCopy(config);
+    renderProcess(config);
+    initScrollReveal();
     await loadFont(config);
   } catch (error) {
     removeVideoPrime();

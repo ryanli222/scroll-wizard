@@ -119,6 +119,24 @@ a:focus-visible {
   margin: 0 0 1rem;
 }
 .outro__body { font-size: clamp(1rem, 1.6vw, 1.35rem); margin: 0 0 2rem; opacity: .85; }
+.outro[hidden] { display: none; }
+.process[hidden] { display: none; }
+.process {
+  padding: 10vh 8vw;
+  display: grid;
+  gap: 2.5rem;
+  max-width: 60rem;
+  margin: 0 auto;
+}
+.step {
+  opacity: 0;
+  translate: 0 24px;
+  transition: opacity 480ms ease, translate 480ms ease;
+  transition-delay: calc(var(--i, 0) * 90ms);
+}
+.step.is-visible { opacity: 1; translate: 0 0; }
+.step__title { font-size: clamp(1.25rem, 2.5vw, 1.75rem); margin: 0 0 .5rem; }
+.step__body { margin: 0; opacity: .8; }
 .footer { padding: 1rem; text-align: center; font-size: .8rem; letter-spacing: .04em; text-transform: uppercase; opacity: .6; }
 h1, h2, h3 { font-family: var(--display); }
 
@@ -185,4 +203,5 @@ h1, h2, h3 { font-family: var(--display); }
     transform: none;
     opacity: 1 !important;
   }
+  .step { opacity: 1 !important; translate: none !important; transition: none !important; }
 }

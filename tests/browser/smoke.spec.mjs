@@ -577,6 +577,27 @@ test('phone viewport keeps tall landscape overlay content reachable', async ({ b
   }
 });
 
+test('outro section is hidden by default when config has no outro', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#outro')).toBeHidden();
+});
+
+test('process steps are absent until enabled, then reveal progressively on scroll', async ({ page }) => {
+  await page.goto('/process/');
+  await expect(page.locator('#process')).toBeVisible();
+  await expect(page.locator('.step')).toHaveCount(3);
+  await expect(page.locator('.step.is-visible')).toHaveCount(0);
+  await page.evaluate(() => document.querySelector('#process').scrollIntoView());
+  await expect.poll(() => page.locator('.step.is-visible').count()).toBeGreaterThan(0);
+});
+
+test('reduced motion shows all process steps immediately', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/process/');
+  const opacity = await page.locator('.step').first().evaluate((el) => getComputedStyle(el).opacity);
+  expect(opacity).toBe('1');
+});
+
 test('phone viewport keeps tall portrait overlay content reachable', async ({ browser, request }) => {
   await requireVideoFixture(request);
   const context = await browser.newContext({
