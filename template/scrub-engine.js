@@ -642,7 +642,6 @@ async function start() {
     }
     await loadPoster(config);
     overlayNodes = renderCopy(config);
-    navItems = renderNav(config, overlayNodes);
     await loadFont(config);
   } catch (error) {
     removeVideoPrime();
@@ -654,6 +653,8 @@ async function start() {
     applyReducedMotion(overlayNodes);
     return;
   }
+
+  navItems = renderNav(config, overlayNodes);
 
   if (globalThis.Lenis) {
     try {
