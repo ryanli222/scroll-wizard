@@ -26,6 +26,7 @@ const outro = document.getElementById('outro');
 const fatalError = document.getElementById('fatal-error');
 const footerBrand = document.getElementById('footer-brand');
 const progressBar = document.getElementById('progress-bar');
+let currentConfig = null;
 
 // 849-byte, single-frame 16x16 baseline H.264 MP4. It gives iOS a local,
 // playable source for gesture priming without fetching the configured video.
@@ -44,13 +45,16 @@ function linkButton(cta, className) {
   return link;
 }
 
-function renderOverlay(data, index) {
+function renderOverlay(data, index, total) {
   const panel = element(
     'article',
     'overlay overlay--' + (data.position ?? 'center'),
   );
   panel.dataset.overlayIndex = String(index);
   panel.inert = true;
+  panel.append(element('span', 'overlay__index',
+    String(index + 1).padStart(2, '0') + ' / ' + String(total).padStart(2, '0')));
+  if (data.kicker) panel.append(element('span', 'overlay__kicker', data.kicker));
   if (data.title) panel.append(element('h2', 'overlay__title', data.title));
   if (data.body) panel.append(element('p', 'overlay__body', data.body));
   if (data.stats?.length) {
@@ -90,14 +94,45 @@ function applyTheme(config) {
 }
 
 function renderCopy(config) {
-  const overlayNodes = (config.overlays ?? []).map((data, index) => {
-    const node = renderOverlay(data, index);
+  const overlays = config.overlays ?? [];
+  const overlayNodes = overlays.map((data, index) => {
+    const node = renderOverlay(data, index, overlays.length);
     overlayLayer.append(node);
     return { data, node };
   });
   renderOutro(config.outro);
   footerBrand.textContent = config.brand.name;
+  renderChrome(config);
   return overlayNodes;
+}
+
+function renderChrome(config) {
+  const brandName = document.getElementById('brand-name');
+  if (brandName) brandName.textContent = config.brand.name;
+  const nav = document.getElementById('chrome-nav');
+  if (nav) {
+    (config.overlays ?? []).forEach((data, index) => {
+      const label = data.kicker ?? data.title;
+      if (!label) return;
+      const pill = element('button', 'chrome__pill', label);
+      pill.type = 'button';
+      pill.dataset.targetOverlayIndex = String(index);
+      pill.addEventListener('click', () => {
+        // ponytail: linear scroll target ignores hold warping; hold plateaus
+        // are wide enough that the landing sits inside the beat.
+        const mid = (data.at[0] + data.at[1]) / 2;
+        const top = scrub.offsetTop + mid * (scrub.offsetHeight - innerHeight);
+        scrollTo({ top, behavior: 'smooth' });
+      });
+      nav.append(pill);
+    });
+  }
+  const cta = document.getElementById('chrome-cta');
+  if (cta && config.outro?.cta) {
+    cta.textContent = config.outro.cta.label;
+    cta.href = config.outro.cta.href;
+    cta.hidden = false;
+  }
 }
 
 function showFatalError(error) {
@@ -354,7 +389,22 @@ function updateOverlays(overlayNodes, raw) {
 function updateProgressBar() {
   const pageProgress = Math.min(1, Math.max(0,
     scrollY / Math.max(1, document.documentElement.scrollHeight - innerHeight)));
-  progressBar.style.width = (pageProgress * 100) + '%';
+  progressBar.style.transform = 'scaleX(' + pageProgress + ')';
+  updateChrome();
+}
+
+function updateChrome() {
+  const hint = document.getElementById('scroll-hint');
+  if (hint) hint.classList.toggle('is-hidden', scrollY > 40);
+  const pills = document.querySelectorAll('.chrome__pill');
+  if (!pills.length) return;
+  const fraction = Math.min(1, Math.max(0,
+    (scrollY - scrub.offsetTop) / Math.max(1, scrub.offsetHeight - innerHeight)));
+  for (const pill of pills) {
+    const range = currentConfig?.overlays?.[Number(pill.dataset.targetOverlayIndex)]?.at;
+    pill.classList.toggle('is-active',
+      Boolean(range) && fraction >= range[0] && fraction <= range[1]);
+  }
 }
 
 function runEngine(config, overlayNodes) {
@@ -574,6 +624,7 @@ async function start() {
     const response = await fetch('config.json', { cache: 'no-store' });
     if (!response.ok) throw new Error('Config request failed: HTTP ' + response.status);
     config = await response.json();
+    currentConfig = config;
 
     const { errors, warnings } = validateConfig(config);
     if (errors.length) {

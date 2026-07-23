@@ -9,6 +9,11 @@
 </head>
 <body>
   <div id="progress-bar" class="progress-bar" aria-hidden="true"></div>
+  <header class="chrome">
+    <span class="chrome__brand"><span class="chrome__dot" aria-hidden="true"></span><span id="brand-name"></span></span>
+    <nav id="chrome-nav" class="chrome__nav" aria-label="Sections"></nav>
+    <a id="chrome-cta" class="chrome__cta" hidden></a>
+  </header>
   <main>
     <section id="scrub" class="scrub" aria-label="Visual story">
       <div class="scrub__sticky">
@@ -22,6 +27,7 @@
           <progress id="load-progress" value="0" max="1"></progress>
         </div>
         <p id="fatal-error" class="fatal-error" role="alert" hidden></p>
+        <div id="scroll-hint" class="scroll-hint" aria-hidden="true">Scroll to explore</div>
       </div>
     </section>
     <section id="outro" class="outro"></section>
@@ -31,5 +37,30 @@
   </footer>
   <script src="lenis.js"></script>
   <script type="module" src="scrub-engine.js"></script>
+  <script type="module">
+    // Pointer tilt on visible overlay cards; fine pointers only, off under reduced motion.
+    if (matchMedia('(hover: hover) and (pointer: fine)').matches
+        && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const sticky = document.querySelector('.scrub__sticky');
+      const cards = () => document.querySelectorAll('.overlay');
+      const clamp = (v) => Math.max(-1, Math.min(1, v));
+      sticky.addEventListener('pointermove', (e) => {
+        for (const card of cards()) {
+          if (parseFloat(card.style.opacity || '0') < 0.05) continue;
+          const r = card.getBoundingClientRect();
+          const dx = (e.clientX - (r.left + r.width / 2)) / r.width;
+          const dy = (e.clientY - (r.top + r.height / 2)) / r.height;
+          card.style.setProperty('--ry', (clamp(dx) * 6).toFixed(2) + 'deg');
+          card.style.setProperty('--rx', (clamp(dy) * -5).toFixed(2) + 'deg');
+        }
+      });
+      sticky.addEventListener('pointerleave', () => {
+        for (const card of cards()) {
+          card.style.setProperty('--rx', '0deg');
+          card.style.setProperty('--ry', '0deg');
+        }
+      });
+    }
+  </script>
 </body>
 </html>
