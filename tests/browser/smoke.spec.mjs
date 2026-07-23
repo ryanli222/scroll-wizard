@@ -167,6 +167,57 @@ test('one missing frame warns once and keeps rendering', async ({ page }) => {
     window.__SCROLL_WIZARD_DEBUG__?.lastFrame ?? -1)).toBeGreaterThanOrEqual(0);
 });
 
+test('beat nav is absent when not enabled', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#beat-nav')).toBeHidden();
+});
+
+test('beat nav renders, jumps on click, and highlights the active beat', async ({ page }) => {
+  await page.route('**/config.json', async (route) => {
+    const response = await route.fetch();
+    const config = await response.json();
+    config.nav = true;
+    config.overlays = [
+      { at: [0.05, 0.3], title: 'One', position: 'left' },
+      { at: [0.3, 0.6], title: 'Two', position: 'center' },
+      { at: [0.6, 0.95], title: 'Three', position: 'right' },
+    ];
+    await route.fulfill({ response, json: config });
+  });
+  await page.goto('/');
+
+  const nav = page.locator('#beat-nav');
+  await expect(nav).toBeVisible();
+  const items = nav.locator('.beat-nav__item');
+  await expect(items).toHaveCount(3);
+  await expect(items.nth(0)).toHaveText('One');
+  await expect(items.nth(1)).toHaveText('Two');
+  await expect(items.nth(2)).toHaveText('Three');
+
+  await items.nth(2).click();
+  await expect(page.locator('[data-nav-index="2"]')).toHaveClass(/is-active/);
+  const scrollY = await page.evaluate(() => window.scrollY);
+  expect(scrollY).toBeGreaterThan(0);
+  await expect(page.locator('[data-overlay-index="2"]')).toHaveJSProperty('inert', false);
+});
+
+test('beat nav is hidden at mobile viewport width', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  try {
+    await page.route('**/config.json', async (route) => {
+      const response = await route.fetch();
+      const config = await response.json();
+      config.nav = true;
+      await route.fulfill({ response, json: config });
+    });
+    await page.goto('/');
+    await expect(page.locator('#beat-nav')).toBeHidden();
+  } finally {
+    await context.close();
+  }
+});
+
 test('decoded bitmap count never exceeds the configured bound', async ({ page }) => {
   // Fixture has 30 frames; the engine's decode window is radius 12 ->
   // min(count, 25) frames, so exceeding 25 means eviction is broken.
