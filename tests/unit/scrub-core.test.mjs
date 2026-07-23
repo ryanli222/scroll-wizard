@@ -557,8 +557,8 @@ describe('validateConfig sections', () => {
       { type: 'scrub-hero' },
       { type: 'feature-split', headline: 'Feature', side: 'right', media: { kind: 'image', src: 'media/poster.webp', alt: 'Product' } },
       { type: 'statement', text: 'A statement' },
-      { type: 'spec', rows: [{ label: 'Weight', value: '1 kg', beat: 2 }] },
-      { type: 'gallery', items: [{ src: 'media/poster.webp', alt: 'Gallery image', beat: 1 }] },
+      { type: 'spec', rows: [{ label: 'Weight', value: '1 kg', beat: 0 }] },
+      { type: 'gallery', items: [{ src: 'media/poster.webp', alt: 'Gallery image', beat: 0 }] },
       { type: 'cta', headline: 'Finish', cta: { label: 'Go', href: '#go' }, emailCapture: true, background: 'media/poster.webp' },
     ];
     expect(validateConfig({ ...base(), sections }).errors).toEqual([]);
