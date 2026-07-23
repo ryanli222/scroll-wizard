@@ -453,3 +453,45 @@ describe('validateConfig register/direction', () => {
     expect(errors.some((e) => e.code === 'direction.enum')).toBe(true);
   });
 });
+
+describe('validateConfig overlay variant/anchor/point', () => {
+  const withOverlay = (overlay) => ({
+    ...structuredClone(validConfig),
+    overlays: [{ at: [0.2, 0.4], title: 'X', ...overlay }],
+  });
+
+  it('accepts an overlay with no variant/anchor (defaults)', () => {
+    expect(validateConfig(withOverlay({})).errors).toEqual([]);
+  });
+
+  it('accepts every valid variant and anchor', () => {
+    for (const variant of ['bare', 'hero', 'caption', 'metric', 'panel']) {
+      expect(validateConfig(withOverlay({ variant, anchor: 'middle' })).errors).toEqual([]);
+    }
+  });
+
+  it('rejects an unknown variant', () => {
+    const { errors } = validateConfig(withOverlay({ variant: 'jumbotron' }));
+    expect(errors.some((e) => e.code === 'overlay.variant')).toBe(true);
+  });
+
+  it('rejects an unknown anchor', () => {
+    const { errors } = validateConfig(withOverlay({ anchor: 'baseline' }));
+    expect(errors.some((e) => e.code === 'overlay.anchor')).toBe(true);
+  });
+
+  it('requires point when variant is annotation', () => {
+    const { errors } = validateConfig(withOverlay({ variant: 'annotation' }));
+    expect(errors.some((e) => e.code === 'overlay.point')).toBe(true);
+  });
+
+  it('accepts an annotation with an in-range point', () => {
+    expect(validateConfig(withOverlay({ variant: 'annotation', point: [0.6, 0.44] })).errors)
+      .toEqual([]);
+  });
+
+  it('rejects an out-of-range point', () => {
+    const { errors } = validateConfig(withOverlay({ variant: 'annotation', point: [1.5, 0.4] }));
+    expect(errors.some((e) => e.code === 'overlay.point')).toBe(true);
+  });
+});

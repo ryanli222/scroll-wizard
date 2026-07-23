@@ -397,6 +397,25 @@ export function validateConfig(config) {
         && !['center', 'left', 'right'].includes(overlay.position)) {
       addError('overlay.position', path + '.position', 'Position must be center, left, or right.');
     }
+    if (overlay.variant !== undefined
+        && !['bare', 'hero', 'caption', 'metric', 'panel', 'annotation'].includes(overlay.variant)) {
+      addError('overlay.variant', path + '.variant',
+        'Variant must be bare, hero, caption, metric, panel, or annotation.');
+    }
+    if (overlay.anchor !== undefined
+        && !['top', 'middle', 'bottom'].includes(overlay.anchor)) {
+      addError('overlay.anchor', path + '.anchor', 'Anchor must be top, middle, or bottom.');
+    }
+    const needsPoint = overlay.variant === 'annotation';
+    if (needsPoint || overlay.point !== undefined) {
+      const pt = overlay.point;
+      const valid = Array.isArray(pt) && pt.length === 2
+        && pt.every((v) => Number.isFinite(v) && v >= 0 && v <= 1);
+      if (!valid) {
+        addError('overlay.point', path + '.point',
+          'Point must be [x, y] with each value in [0, 1]' + (needsPoint ? ' (required for annotation).' : '.'));
+      }
+    }
     if (overlay.cta) validateCta(overlay.cta, path + '.cta', addError);
     if (overlay.stats !== undefined) {
       if (!Array.isArray(overlay.stats)) {
