@@ -1,76 +1,151 @@
 {
-  "brand": {
-    "name": "Aster",
-    "tagline": "Light, held in motion",
-    "imageAlt": "A sculptural Aster lamp rotating through a dark studio"
-  },
-  "direction": "technical",
-  "directionPreset": {
-    "motion": {
-      "ease": "cubic-bezier(0.85, 0, 0.15, 1)",
-      "springBounce": 0,
-      "revealTravelPx": 0
-    },
-    "chromeStyle": "grid-index",
-    "scrimStrength": 0.55
-  },
-  "theme": {
-    "bg": "#050607",
-    "text": "#f7f8f2",
-    "accent": "#dfff57",
-    "surface": "rgba(5, 6, 7, 0.78)",
-    "radius": 12,
-    "fonts": {
-      "display": "Georgia, serif",
-      "body": "Inter, ui-sans-serif, system-ui, sans-serif"
-    }
-  },
-  "frames": {
-    "count": 24,
-    "pattern": "frames/frame-{index:4}.webp",
-    "poster": "frames/frame-0001.webp"
-  },
-  "scrub": {
-    "heightVh": 400,
-    "smoothing": 0.12
-  },
-  "overlays": [
-    {
-      "at": [0.05, 0.22],
-      "title": "Form follows light",
-      "body": "A quiet opening view.",
-      "position": "center"
-    },
-    {
-      "at": [0.36, 0.56],
-      "title": "Precision at rest",
-      "body": "The scene pauses while the detail lands.",
-      "hold": true,
-      "position": "left",
-      "stats": [
-        { "value": "18 h", "label": "Battery" }
-      ],
-      "cta": {
-        "label": "See the specs",
-        "href": "#specs"
-      }
-    },
-    {
-      "at": [0.68, 0.86],
-      "title": "Light, precisely placed",
-      "body": "A normalized source point stays pinned through every crop.",
-      "position": "right",
-      "variant": "annotation",
-      "anchor": "middle",
-      "point": [0.72, 0.38]
-    }
-  ],
-  "outro": {
-    "headline": "Made to move with you",
-    "body": "One object, seen from every side.",
-    "cta": {
-      "label": "Buy Aster",
-      "href": "#buy"
-    }
-  }
+    "brand":  {
+                  "name":  "Aster",
+                  "tagline":  "Light, held in motion",
+                  "imageAlt":  "A sculptural Aster lamp rotating through a dark studio"
+              },
+    "direction":  "technical",
+    "directionPreset":  {
+                            "motion":  {
+                                           "ease":  "cubic-bezier(0.85, 0, 0.15, 1)",
+                                           "springBounce":  0,
+                                           "revealTravelPx":  0
+                                       },
+                            "chromeStyle":  "grid-index",
+                            "scrimStrength":  0.55
+                        },
+    "theme":  {
+                  "bg":  "#050607",
+                  "text":  "#f7f8f2",
+                  "accent":  "#dfff57",
+                  "surface":  "rgba(5, 6, 7, 0.78)",
+                  "radius":  12,
+                  "fonts":  {
+                                "display":  "Georgia, serif",
+                                "body":  "Inter, ui-sans-serif, system-ui, sans-serif"
+                            }
+              },
+    "frames":  {
+                   "count":  24,
+                   "pattern":  "frames/frame-{index:4}.webp",
+                   "poster":  "frames/frame-0001.webp"
+               },
+    "scrub":  {
+                  "heightVh":  400,
+                  "smoothing":  0.12
+              },
+    "overlays":  [
+                     {
+                         "at":  [
+                                    0.05,
+                                    0.22
+                                ],
+                         "title":  "Form follows light",
+                         "body":  "A quiet opening view.",
+                         "position":  "center"
+                     },
+                     {
+                         "at":  [
+                                    0.36,
+                                    0.56
+                                ],
+                         "title":  "Precision at rest",
+                         "body":  "The scene pauses while the detail lands.",
+                         "hold":  true,
+                         "position":  "left",
+                         "stats":  [
+                                       {
+                                           "value":  "18 h",
+                                           "label":  "Battery"
+                                       }
+                                   ],
+                         "cta":  {
+                                     "label":  "See the specs",
+                                     "href":  "#specs"
+                                 }
+                     },
+                     {
+                         "at":  [
+                                    0.68,
+                                    0.86
+                                ],
+                         "title":  "Light, precisely placed",
+                         "body":  "A normalized source point stays pinned through every crop.",
+                         "position":  "right",
+                         "variant":  "annotation",
+                         "anchor":  "middle",
+                         "point":  [
+                                       0.72,
+                                       0.38
+                                   ]
+                     }
+                 ],
+    "outro":  {
+                  "headline":  "Made to move with you",
+                  "body":  "One object, seen from every side.",
+                  "cta":  {
+                              "label":  "Buy Aster",
+                              "href":  "#buy"
+                          }
+              },
+    "sections":  [
+                     {
+                         "type":  "masthead",
+                         "eyebrow":  "Aster / 01",
+                         "headline":  "Light, held in motion",
+                         "sub":  "A sculptural object explored at your pace.",
+                         "scrollHint":  "Scroll to explore"
+                     },
+                     {
+                         "type":  "scrub-hero"
+                     },
+                     {
+                         "type":  "feature-split",
+                         "headline":  "Precision at rest",
+                         "body":  "Every angle resolves into the next.",
+                         "side":  "right",
+                         "media":  {
+                                       "kind":  "image",
+                                       "src":  "frames/frame-0001.webp",
+                                       "alt":  "Aster lamp in a dark studio"
+                                   }
+                     },
+                     {
+                         "type":  "statement",
+                         "text":  "One object, seen from every side."
+                     },
+                     {
+                         "type":  "spec",
+                         "headline":  "Designed to last",
+                         "rows":  [
+                                      {
+                                          "label":  "Battery",
+                                          "value":  "18 h",
+                                          "beat":  1
+                                      }
+                                  ]
+                     },
+                     {
+                         "type":  "gallery",
+                         "headline":  "Story beats",
+                         "items":  [
+                                       {
+                                           "src":  "frames/frame-0001.webp",
+                                           "alt":  "Aster lamp opening view",
+                                           "beat":  0
+                                       }
+                                   ]
+                     },
+                     {
+                         "type":  "cta",
+                         "headline":  "Made to move with you",
+                         "body":  "One object, seen from every side.",
+                         "cta":  {
+                                     "label":  "Buy Aster",
+                                     "href":  "#buy"
+                                 },
+                         "emailCapture":  true,
+                         "background":  "frames/frame-0001.webp"
+                     }
+                 ]
 }

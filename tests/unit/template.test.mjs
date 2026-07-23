@@ -87,3 +87,27 @@ describe('template contract', () => {
     );
   });
 });
+
+describe('section template contract', () => {
+  it('declares section anchors and runtime composition without a section scroll listener', () => {
+    expect(html).toContain('id="site-sections"');
+    expect(html).toContain('id="scrub"');
+    expect(html).toContain('id="outro"');
+    expect(engine).toContain("from './sections-core.js'");
+    expect(engine).toContain("from './section-renderer.js'");
+    expect(engine).toContain('renderSections({');
+    expect(engine).not.toMatch(/function renderOutro/);
+    expect(engine).not.toMatch(/addEventListener\(['"]scroll/);
+    expect(config.sections.map(({ type }) => type)).toEqual(expect.arrayContaining([
+      'masthead', 'scrub-hero', 'feature-split', 'statement', 'spec', 'gallery', 'cta',
+    ]));
+  });
+
+  it('contains visible section styles and progressive reduced-motion-safe view reveals', () => {
+    expect(css).toContain('@supports (animation-timeline: view())');
+    expect(css).toContain('animation-timeline: view()');
+    expect(css).toContain('animation-range: entry 10% cover 32%');
+    expect(css).toMatch(/\.site-section\s*\{[^}]*opacity:\s*1[^}]*transform:\s*none/s);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.site-section \.section-reveal/s);
+  });
+});

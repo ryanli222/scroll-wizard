@@ -15,7 +15,10 @@ import {
   smooth,
   validateConfig,
 } from './scrub-core.js';
+import { assembleSections, currentPoster } from './sections-core.js';
+import { renderSections } from './section-renderer.js';
 
+const sectionContainer = document.getElementById('site-sections');
 const scrub = document.getElementById('scrub');
 const poster = document.getElementById('poster');
 const scrubVideo = document.getElementById('scrub-video');
@@ -99,13 +102,6 @@ function renderOverlay(data, index, total) {
   return { node: panel, content };
 }
 
-function renderOutro(data) {
-  if (!data) return;
-  if (data.headline) outro.append(element('h1', 'outro__headline', data.headline));
-  if (data.body) outro.append(element('p', 'outro__body', data.body));
-  if (data.cta) outro.append(linkButton(data.cta, 'outro__cta'));
-}
-
 function applyTheme(config) {
   if (config.direction !== undefined && config.directionPreset === undefined) {
     throw new Error(
@@ -154,7 +150,6 @@ function renderCopy(config) {
     overlayLayer.append(node);
     return { data, node, content };
   });
-  renderOutro(config.outro);
   footerBrand.textContent = config.brand.name;
   return overlayNodes;
 }
@@ -699,6 +694,8 @@ async function start() {
       removeVideoPrime = installVideoPrime(scrubVideo);
     }
     await loadPoster(config);
+    const sections = assembleSections(config);
+    renderSections({ container: sectionContainer, scrubElement: scrub, outroElement: outro, sections, poster: currentPoster(config) });
     overlayNodes = renderCopy(config);
     await loadFont(config);
     const stickyRect = scrub.querySelector('.scrub__sticky').getBoundingClientRect();
@@ -713,6 +710,8 @@ async function start() {
     showFatalError(error);
     return;
   }
+
+  if (!scrub.isConnected) return;
 
   if (reducedMotion) {
     applyReducedMotion(overlayNodes);
