@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { hasFlag, isDirect, valueAfter } from './lib/cli.mjs';
 import { directoryNonEmpty, pathExists, writeJsonAtomic } from './lib/files.mjs';
 import { validateConfig } from '../template/scrub-core.js';
+import { assembleSections } from '../template/sections-core.js';
 
 const DEFAULT_TEMPLATE_DIR = fileURLToPath(new URL('../template', import.meta.url));
 
@@ -135,6 +136,7 @@ export function assembleConfig(defaults, values, frameSet, mediaSet = null) {
         + '.' + frameSet.extension,
     };
   }
+  config.sections = assembleSections(config);
   const report = validateConfig(config);
   if (report.errors.length) {
     throw new Error(report.errors.map((item) => item.path + ': ' + item.message).join('\n'));

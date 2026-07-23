@@ -806,3 +806,21 @@ describe('scaffold-site CLI', () => {
     expect(io2.error).toHaveBeenCalledWith(expect.stringContaining('missing.json'));
   });
 });
+
+describe('assembleConfig sections', () => {
+  const defaults = {
+    brand: { name: 'World', tagline: 'Enter it' },
+    theme: { bg: '#000000', text: '#ffffff', accent: '#00ff00', surface: 'rgba(0,0,0,.8)', radius: 8, fonts: { display: 'serif', body: 'sans-serif' } },
+    scrub: { heightVh: 400, smoothing: .12 },
+  };
+  const frameSet = { count: 24, extension: 'webp', pattern: 'frames/frame-{index:4}.webp' };
+
+  it('preserves explicit sections and synthesizes v3 defaults after media selection', () => {
+    expect(assembleConfig(defaults, { sections: [{ type: 'statement', text: 'First' }] }, frameSet).config.sections)
+      .toEqual([{ type: 'statement', text: 'First' }]);
+    expect(assembleConfig(defaults, { register: 'full3d', archetype: 'flythrough', direction: 'cinematic', overlays: [{ at: [0, 1], title: 'Arrival' }] }, frameSet).config.sections.map(({ type }) => type))
+      .toEqual(['masthead', 'scrub-hero', 'statement', 'feature-split', 'cta']);
+    expect(assembleConfig(defaults, { register: 'product', overlays: [{ at: [0, 1], title: 'Arrival' }] }, null, { duration: 6 }).config.sections.at(-1).background)
+      .toBe('media/poster.webp');
+  });
+});
