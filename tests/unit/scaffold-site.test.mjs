@@ -200,6 +200,38 @@ describe('assembleConfig', () => {
   });
 });
 
+describe('assembleConfig direction presets', () => {
+  const defaults = {
+    brand: { name: 'D' },
+    theme: { bg: '#000000', text: '#ffffff', accent: '#00ff00', surface: 'rgba(0,0,0,0.8)', radius: 8,
+      fonts: { display: 'serif', body: 'sans-serif' } },
+    scrub: { heightVh: 400, smoothing: 0.12 },
+  };
+  const frameSet = { count: 24, pattern: 'frames/frame-{index:4}.webp', extension: 'webp' };
+
+  it('applies the cinematic preset font when direction is set', () => {
+    const { config } = assembleConfig(defaults, {
+      brand: { name: 'D' }, direction: 'cinematic',
+    }, frameSet, null);
+    expect(config.direction).toBe('cinematic');
+    expect(config.theme.fonts.display).toMatch(/serif/i);
+    expect(config.theme.accent).toBe('#c9b48a');
+  });
+
+  it('lets an explicit theme value override the preset', () => {
+    const { config } = assembleConfig(defaults, {
+      brand: { name: 'D' }, direction: 'cinematic', theme: { accent: '#ff0000' },
+    }, frameSet, null);
+    expect(config.theme.accent).toBe('#ff0000');
+  });
+
+  it('is unchanged when no direction is given', () => {
+    const { config } = assembleConfig(defaults, { brand: { name: 'D' } }, frameSet, null);
+    expect(config.theme.accent).toBe('#00ff00');
+    expect(config.direction).toBeUndefined();
+  });
+});
+
 describe('assembleConfig video mode', () => {
   const defaults = () => JSON.parse(JSON.stringify({
     brand: { name: 'Aster', tagline: 'T', imageAlt: 'A' },

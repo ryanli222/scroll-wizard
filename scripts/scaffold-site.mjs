@@ -21,6 +21,10 @@ import { validateConfig } from '../template/scrub-core.js';
 
 const DEFAULT_TEMPLATE_DIR = fileURLToPath(new URL('../template', import.meta.url));
 
+const DIRECTIONS = JSON.parse(
+  await readFile(fileURLToPath(new URL('../references/directions.json', import.meta.url)), 'utf8'),
+);
+
 const FRAME_NAME = /^frame-(\d{4})\.(webp|jpg)$/;
 const MEDIA_ARTIFACTS = ['video.mp4', 'poster.webp', 'media.json'];
 
@@ -94,8 +98,13 @@ export function assembleConfig(defaults, values, frameSet, mediaSet = null) {
     brand,
     theme: {
       ...defaults.theme,
+      ...(DIRECTIONS[creative.direction]?.theme ?? {}),
       ...creative.theme,
-      fonts: { ...defaults.theme.fonts, ...creative.theme?.fonts },
+      fonts: {
+        ...defaults.theme.fonts,
+        ...DIRECTIONS[creative.direction]?.theme?.fonts,
+        ...creative.theme?.fonts,
+      },
     },
     scrub: { ...defaults.scrub, ...creative.scrub },
   };
