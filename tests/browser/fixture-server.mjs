@@ -201,6 +201,20 @@ const rawCinematicConfig = {
   direction: 'cinematic',
 };
 
+const sectionsConfig = {
+  ...config,
+  sections: [
+    { type: 'masthead', headline: 'Fixture masthead', sub: 'Fixture tagline' },
+    { type: 'scrub-hero' },
+    { type: 'feature-split', headline: 'Fixture feature', side: 'right', media: { kind: 'image', src: 'frames/frame-0001.webp', alt: 'Fixture media' } },
+    { type: 'statement', text: 'Fixture statement' },
+    { type: 'spec', headline: 'Fixture spec', rows: [{ label: 'Battery', value: '18 h', beat: 1 }] },
+    { type: 'gallery', headline: 'Fixture gallery', items: [{ src: 'frames/frame-0001.webp', alt: 'Fixture gallery image', beat: 1 }] },
+    { type: 'cta', headline: 'Fixture CTA', cta: { label: 'Finish', href: '#finish' }, emailCapture: true, background: 'frames/frame-0001.webp' },
+  ],
+};
+const legacyConfig = { ...config };
+
 const videoConfig = {
   ...config,
   scrub: { heightVh: 400, smoothing: 0.12, mode: 'video' },
@@ -267,8 +281,12 @@ const server = createServer(async (req, res) => {
     if (req.headers.referer) {
       try {
         const referrer = new URL(req.headers.referer);
-        const requestedFixture = referrer.searchParams.get('config');
-        if (requestedFixture === 'variants') {
+        const requestedFixture = referrer.searchParams.get('config') ?? referrer.searchParams.get('fixture');
+        if (requestedFixture === 'sections') {
+          selectedConfig = sectionsConfig;
+        } else if (requestedFixture === 'legacy') {
+          selectedConfig = legacyConfig;
+        } else if (requestedFixture === 'variants') {
           if (isVideo) {
             selectedConfig = videoVariantsConfig;
           } else {

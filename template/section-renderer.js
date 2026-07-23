@@ -21,8 +21,8 @@ function image(src, alt, className) {
   return result;
 }
 
-function link(cta) {
-  const result = node('a', 'section-cta', cta.label);
+function link(cta, className = 'section-cta') {
+  const result = node('a', className, cta.label);
   result.href = cta.href;
   return result;
 }
@@ -104,7 +104,7 @@ function buildCta(data, index, outro, formNodes) {
   const content = node('div', 'site-section__inner section-reveal');
   content.append(node('span', 'section-accent-rule'), node('h2', 'section-title', data.headline));
   if (data.body) content.append(node('p', 'section-copy', data.body));
-  if (data.cta) content.append(link(data.cta));
+  if (data.cta) content.append(link(data.cta, 'section-cta outro__cta'));
   if (data.emailCapture) {
     const form = node('form', 'section-email'); form.noValidate = false;
     const label = node('label', '', 'Email address');
