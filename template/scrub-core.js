@@ -7,6 +7,15 @@ export function scrollProgress(scrollY, sectionTop, sectionHeight, viewportH) {
   return clamp((scrollY - sectionTop) / distance, 0, 1);
 }
 
+export function progressToScrollY(progress, sectionTop, sectionHeight, viewportH) {
+  if (![progress, sectionTop, sectionHeight, viewportH].every(Number.isFinite)) {
+    return sectionTop;
+  }
+  const distance = Math.max(0, sectionHeight - viewportH);
+  if (distance <= 0) return sectionTop;
+  return clamp(sectionTop + progress * distance, sectionTop, sectionTop + sectionHeight);
+}
+
 export function applyHolds(progress, holds = []) {
   const p = clamp(Number.isFinite(progress) ? progress : 0, 0, 1);
   const sorted = [...holds].sort((a, b) => a[0] - b[0]);
@@ -100,6 +109,18 @@ export function overlayOpacity(progress, range, fade) {
   if (progress <= start || progress >= end || width <= 0) return 0;
   if (ramp <= 0) return 1;
   return clamp(Math.min((progress - start) / ramp, (end - progress) / ramp), 0, 1);
+}
+
+export function nearestOverlayIndex(progress, overlays) {
+  if (!Array.isArray(overlays) || overlays.length === 0) return -1;
+  const p = clamp(Number.isFinite(progress) ? progress : 0, 0, 1);
+  let best = 0;
+  for (let index = 0; index < overlays.length; index += 1) {
+    const [start, end] = overlays[index].at ?? [0, 0];
+    if (p >= start && p <= end) return index;
+    if (start <= p) best = index;
+  }
+  return best;
 }
 
 export function holdFrames(holds, frameCount) {
@@ -276,6 +297,10 @@ export function validateConfig(config) {
 
   if (!config.brand || typeof config.brand.name !== 'string' || !config.brand.name.trim()) {
     addError('brand.name', 'brand.name', 'Brand name is required.');
+  }
+
+  if (config.nav !== undefined && typeof config.nav !== 'boolean') {
+    addError('nav.type', 'nav', 'Nav must be a boolean.');
   }
 
   const theme = config.theme ?? {};
