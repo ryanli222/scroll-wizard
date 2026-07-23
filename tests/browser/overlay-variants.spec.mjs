@@ -15,7 +15,7 @@ async function showVariantOverlays(page, path = '/?config=variants', fraction = 
     const scrub = document.getElementById('scrub');
     scrollTo(0, scrub.offsetTop + (scrub.offsetHeight - innerHeight) * targetFraction);
   }, fraction);
-  await expect(page.locator('.overlay--bare')).toHaveAttribute('style', /--reveal/);
+  await expect(page.locator('.overlay--bare .overlay__content')).toHaveAttribute('style', /--reveal/);
 }
 
 async function computedColors(page) {
@@ -73,6 +73,31 @@ test.describe('overlay variants & direction runtime', () => {
       }
       expect(style.bodyOpacity).toBe('1');
     }
+  });
+
+  test('uses one outer alpha near the visibility threshold', async ({ page }) => {
+    await page.goto('/?config=variants');
+    const overlay = page.locator('.overlay--bare');
+    await expect(overlay).toBeAttached();
+    await page.evaluate(() => {
+      const scrub = document.getElementById('scrub');
+      const progress = 0.05275;
+      scrollTo(0, scrub.offsetTop + (scrub.offsetHeight - innerHeight) * progress);
+    });
+    await expect.poll(() => overlay.evaluate((node) =>
+      Number.parseFloat(node.style.opacity))).toBeGreaterThan(0.045);
+    await page.waitForTimeout(400);
+    const alpha = await overlay.evaluate((node) => {
+      const content = node.querySelector('.overlay__content');
+      const outer = Number.parseFloat(getComputedStyle(node).opacity);
+      const inner = Number.parseFloat(getComputedStyle(content).opacity);
+      return { outer, inner, effective: outer * inner, inert: node.inert };
+    });
+    expect(alpha.outer).toBeGreaterThan(0.045);
+    expect(alpha.outer).toBeLessThan(0.065);
+    expect(alpha.inner).toBe(1);
+    expect(alpha.effective).toBeCloseTo(alpha.outer, 4);
+    expect(alpha.inert).toBe(false);
   });
 
   test('applies every generated preset token to root without CSS direction maps', async ({ page }) => {
@@ -314,23 +339,25 @@ test.describe('overlay variants & direction runtime', () => {
     for (const content of await page.locator('.overlay__content').all()) {
       await expect(content).toHaveCSS('transform', 'none');
     }
+    const cta = page.locator('.overlay__cta').first();
+    await cta.hover();
+    await expect(cta).toHaveCSS('transform', 'none');
+    const box = await cta.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await expect(cta).toHaveCSS('transform', 'none');
+    await page.mouse.up();
   });
 
-  test('raw non-scaffold configs use only the minimal legacy motion fallback', async ({ page }) => {
+  test('rejects a directed raw config that omits generated runtime preset data', async ({ page }) => {
     await page.goto('/?config=raw-cinematic');
-    await expect(page.locator('body')).toHaveClass(/dir-cinematic/);
-    const runtime = await page.locator('html').evaluate((root) => ({
-      ease: root.style.getPropertyValue('--ease'),
-      bounce: root.style.getPropertyValue('--spring-bounce'),
-      travel: root.style.getPropertyValue('--reveal-travel'),
-      scrim: root.style.getPropertyValue('--scrim-strength'),
-    }));
-    expect(runtime).toEqual({
-      ease: presets.minimal.motion.ease,
-      bounce: '0',
-      travel: presets.minimal.motion.revealTravelPx + 'px',
-      scrim: String(presets.minimal.scrimStrength),
-    });
+    const fatal = page.locator('#fatal-error');
+    await expect(fatal).toBeVisible();
+    await expect(fatal).toContainText(/directionPreset.*cinematic|cinematic.*directionPreset/i);
+    await expect(page.locator('body')).not.toHaveClass(/dir-cinematic/);
+    const rootTheme = await page.locator('html').evaluate((root) =>
+      root.style.getPropertyValue('--bg'));
+    expect(rootTheme).toBe('');
   });
 
   test('video mode maps annotation geometry once and keeps it stable while scrubbing', async ({ page }) => {

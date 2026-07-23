@@ -96,14 +96,12 @@ a:focus-visible {
   max-width: 100%;
   padding-bottom: 1px;
   color: var(--text);
-  opacity: var(--reveal, 1);
   filter: blur(calc((1 - var(--reveal, 1)) * 4px));
   transform: translateY(calc((1 - var(--reveal, 1)) * var(--reveal-travel)))
     rotateX(calc((1 - var(--reveal, 1)) * 6deg));
   transform-origin: center;
   transition:
     transform 320ms var(--ease),
-    opacity 260ms var(--ease),
     filter 260ms var(--ease);
 }
 .overlay__content::before {
@@ -380,4 +378,6 @@ h1, h2, h3 { font-family: var(--display); }
     transition: opacity 200ms ease;
   }
   .overlay__leader { display: none; }
+  .overlay__cta:hover,
+  .overlay__cta:active { transform: none; }
 }

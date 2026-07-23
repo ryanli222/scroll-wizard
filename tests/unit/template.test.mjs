@@ -13,6 +13,9 @@ const engine = await readFile(
 const css = await readFile(
   new URL('../../template/style.css', import.meta.url), 'utf8',
 );
+const presets = JSON.parse(await readFile(
+  new URL('../../references/directions.json', import.meta.url), 'utf8',
+));
 
 describe('template contract', () => {
   it('contains semantic runtime hooks and a real poster image', () => {
@@ -41,5 +44,32 @@ describe('template contract', () => {
     expect(engine).toContain("element('div', 'overlay__content')");
     expect(css).toMatch(/\.overlay__content\s*\{[^}]*transform:/s);
     expect(css).toMatch(/\.overlay\s*\{[^}]*transform:\s*none/s);
+  });
+
+  it('caches overlay content and applies reveal without squaring RAF opacity', () => {
+    const updateBlock = engine.match(
+      /function updateOverlays\([\s\S]*?\n}\n\nfunction updateProgressBar/,
+    )?.[0] ?? '';
+    expect(engine).toContain('return { node: panel, content };');
+    expect(engine).toContain('return { data, node, content };');
+    expect(updateBlock).toContain('for (const { data, node, content } of overlayNodes)');
+    expect(updateBlock).not.toContain('querySelector');
+    expect(updateBlock).toContain("content.style.setProperty('--reveal', String(opacity))");
+    expect(css).not.toMatch(/\.overlay__content\s*\{[^}]*opacity:\s*var\(--reveal/s);
+  });
+
+  it('ships runtime data matching the example direction preset exactly', () => {
+    const preset = presets[config.direction];
+    expect(config.directionPreset).toEqual({
+      motion: preset.motion,
+      chromeStyle: preset.chromeStyle,
+      scrimStrength: preset.scrimStrength,
+    });
+  });
+
+  it('neutralizes overlay CTA hover and press transforms under reduced motion', () => {
+    const reduced = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*\n}/)?.[0] ?? '';
+    expect(reduced).toMatch(/\.overlay__cta:hover[^}]*transform:\s*none/s);
+    expect(reduced).toMatch(/\.overlay__cta:active[^}]*transform:\s*none/s);
   });
 });

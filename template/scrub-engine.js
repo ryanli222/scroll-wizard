@@ -28,9 +28,9 @@ const fatalError = document.getElementById('fatal-error');
 const footerBrand = document.getElementById('footer-brand');
 const progressBar = document.getElementById('progress-bar');
 
-// Raw, hand-authored v2 configs do not carry generated directionPreset data.
-// Give only those legacy configs the calm minimal runtime; scaffolded configs
-// always serialize the selected references/directions.json preset instead.
+// Raw, hand-authored v2 configs with no direction predate generated presets.
+// Give only those undirected configs the calm minimal runtime; any explicit
+// direction must carry scaffolded references/directions.json runtime data.
 const LEGACY_DIRECTION_RUNTIME = Object.freeze({
   motion: Object.freeze({
     ease: 'cubic-bezier(0.23, 1, 0.32, 1)',
@@ -96,7 +96,7 @@ function renderOverlay(data, index, total) {
   }
   if (data.cta) content.append(linkButton(data.cta, 'overlay__cta'));
   panel.append(content);
-  return panel;
+  return { node: panel, content };
 }
 
 function renderOutro(data) {
@@ -107,6 +107,12 @@ function renderOutro(data) {
 }
 
 function applyTheme(config) {
+  if (config.direction !== undefined && config.directionPreset === undefined) {
+    throw new Error(
+      'Direction "' + config.direction + '" requires generated directionPreset data. '
+      + 'Run scaffold-site so references/directions.json is serialized into config.json.',
+    );
+  }
   const theme = config.theme;
   const runtime = config.directionPreset ?? LEGACY_DIRECTION_RUNTIME;
   const motion = runtime.motion ?? LEGACY_DIRECTION_RUNTIME.motion;
@@ -144,9 +150,9 @@ function applyTheme(config) {
 function renderCopy(config) {
   const overlays = config.overlays ?? [];
   const overlayNodes = overlays.map((data, index) => {
-    const node = renderOverlay(data, index, overlays.length);
+    const { node, content } = renderOverlay(data, index, overlays.length);
     overlayLayer.append(node);
-    return { data, node };
+    return { data, node, content };
   });
   renderOutro(config.outro);
   footerBrand.textContent = config.brand.name;
@@ -203,10 +209,10 @@ async function loadFont(config) {
 }
 
 function applyReducedMotion(overlayNodes) {
-  for (const { node } of overlayNodes) {
+  for (const { node, content } of overlayNodes) {
     node.inert = false;
     node.style.opacity = '1';
-    node.style.setProperty('--reveal', '1');
+    content.style.setProperty('--reveal', '1');
     node.style.pointerEvents = 'none';
   }
 }
@@ -430,15 +436,14 @@ if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
 }
 
 function updateOverlays(overlayNodes, raw) {
-  for (const { data, node } of overlayNodes) {
+  for (const { data, node, content } of overlayNodes) {
     const opacity = overlayOpacity(raw, data.at);
     node.style.opacity = String(opacity);
-    node.style.setProperty('--reveal', String(opacity));
+    content.style.setProperty('--reveal', String(opacity));
     const visible = opacity >= 0.05;
     node.inert = !visible;
     node.style.pointerEvents = 'none';
-    const content = node.querySelector('.overlay__content');
-    if (content) content.style.pointerEvents = visible ? 'auto' : 'none';
+    content.style.pointerEvents = visible ? 'auto' : 'none';
   }
 }
 

@@ -5,6 +5,15 @@
     "imageAlt": "A sculptural Aster lamp rotating through a dark studio"
   },
   "direction": "technical",
+  "directionPreset": {
+    "motion": {
+      "ease": "cubic-bezier(0.85, 0, 0.15, 1)",
+      "springBounce": 0,
+      "revealTravelPx": 0
+    },
+    "chromeStyle": "grid-index",
+    "scrimStrength": 0.55
+  },
   "theme": {
     "bg": "#050607",
     "text": "#f7f8f2",
