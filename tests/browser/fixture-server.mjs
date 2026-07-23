@@ -110,6 +110,30 @@ const config = {
   ],
 };
 
+const variantsConfig = {
+  ...config,
+  direction: 'technical',
+  overlays: [
+    {
+      at: [0.05, 0.95],
+      title: 'Fixture hero',
+      body: 'Large centered type for the hero variant.',
+      position: 'center',
+      variant: 'hero',
+      anchor: 'middle',
+    },
+    {
+      at: [0.05, 0.95],
+      title: 'Fixture annotation',
+      body: 'Pinned to a normalized point on the source.',
+      position: 'right',
+      variant: 'annotation',
+      anchor: 'middle',
+      point: [0.8, 0.35],
+    },
+  ],
+};
+
 const videoConfig = {
   ...config,
   scrub: { heightVh: 400, smoothing: 0.12, mode: 'video' },
@@ -166,8 +190,20 @@ const server = createServer(async (req, res) => {
   }
 
   if (pathname === '/config.json' || pathname === '/video/config.json') {
+    const isVideo = pathname.startsWith('/video/');
+    let selectedConfig = isVideo ? videoConfig : config;
+    if (!isVideo && req.headers.referer) {
+      try {
+        const referrer = new URL(req.headers.referer);
+        if (referrer.searchParams.get('config') === 'variants') {
+          selectedConfig = variantsConfig;
+        }
+      } catch {
+        // Ignore malformed referrers and keep the default deterministic fixture.
+      }
+    }
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify(pathname.startsWith('/video/') ? videoConfig : config));
+    res.end(JSON.stringify(selectedConfig));
     return;
   }
 

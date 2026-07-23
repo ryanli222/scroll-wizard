@@ -4,6 +4,7 @@
     "tagline": "Light, held in motion",
     "imageAlt": "A sculptural Aster lamp rotating through a dark studio"
   },
+  "direction": "technical",
   "theme": {
     "bg": "#050607",
     "text": "#f7f8f2",
@@ -44,6 +45,15 @@
         "label": "See the specs",
         "href": "#specs"
       }
+    },
+    {
+      "at": [0.68, 0.86],
+      "title": "Light, precisely placed",
+      "body": "A normalized source point stays pinned through every crop.",
+      "position": "right",
+      "variant": "annotation",
+      "anchor": "middle",
+      "point": [0.72, 0.38]
     }
   ],
   "outro": {

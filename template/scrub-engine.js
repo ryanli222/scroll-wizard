@@ -7,6 +7,7 @@ import {
   frameFilename,
   lingerEase,
   overlayOpacity,
+  pointToPixel,
   progressToFrame,
   progressToTime,
   scrollProgress,
@@ -28,6 +29,8 @@ const footerBrand = document.getElementById('footer-brand');
 const progressBar = document.getElementById('progress-bar');
 let currentConfig = null;
 
+const DIRECTION_TRAVEL = { minimal: 16, cinematic: 12, technical: 0, bold: 24 };
+
 // 849-byte, single-frame 16x16 baseline H.264 MP4. It gives iOS a local,
 // playable source for gesture priming without fetching the configured video.
 const VIDEO_PRIME_SRC = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMPbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAjl0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAGxbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABXG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAARxzdGJsAAAAuHN0c2QAAAAAAAAAAQAAAKhhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAALmF2Y0MBQsAe/+EAFmdCwB7ZHsBEAAADAAQAAAMACDxYuSABAAVoy4PLIAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAAACQAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAABAAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAAASAAAAAQAAABRzdGNvAAAAAAAAAAEAAAM/AAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2Mi4xMi4xMDIAAAAIZnJlZQAAABptZGF0AAAADmWIhAV///8PRQABQt+A';
@@ -46,14 +49,25 @@ function linkButton(cta, className) {
 }
 
 function renderOverlay(data, index, total) {
-  const panel = element(
-    'article',
-    'overlay overlay--' + (data.position ?? 'center'),
-  );
+  const variant = data.variant ?? 'bare';
+  const anchor = data.anchor ?? 'bottom';
+  const classes = [
+    'overlay',
+    'overlay--' + variant,
+    'overlay--' + (data.position ?? 'center'),
+    'overlay--anchor-' + anchor,
+  ];
+  if (data.showIndex) classes.push('overlay--show-index');
+  if (data.kicker) classes.push('overlay--show-kicker');
+  const panel = element('article', classes.join(' '));
   panel.dataset.overlayIndex = String(index);
   panel.inert = true;
   panel.append(element('span', 'overlay__index',
     String(index + 1).padStart(2, '0') + ' / ' + String(total).padStart(2, '0')));
+  if (variant === 'annotation') {
+    panel.dataset.point = JSON.stringify(data.point);
+    panel.prepend(element('span', 'overlay__leader'));
+  }
   if (data.kicker) panel.append(element('span', 'overlay__kicker', data.kicker));
   if (data.title) panel.append(element('h2', 'overlay__title', data.title));
   if (data.body) panel.append(element('p', 'overlay__body', data.body));
@@ -90,6 +104,11 @@ function applyTheme(config) {
   root.setProperty('--radius', theme.radius + 'px');
   if (theme.fonts?.display) root.setProperty('--display', theme.fonts.display);
   if (theme.fonts?.body) root.setProperty('--body', theme.fonts.body);
+  if (config.direction) document.body.classList.add('dir-' + config.direction);
+  root.setProperty(
+    '--reveal-travel',
+    (DIRECTION_TRAVEL[config.direction] ?? 24) + 'px',
+  );
   scrub.style.setProperty('height', config.scrub.heightVh + 'vh');
 }
 
@@ -357,6 +376,31 @@ function drawCover(context, source) {
   );
 }
 
+function positionAnnotations(sourceW, sourceH, boxW, boxH) {
+  for (const node of overlayLayer.querySelectorAll('.overlay--annotation')) {
+    let point;
+    try {
+      point = JSON.parse(node.dataset.point);
+    } catch {
+      continue;
+    }
+    const { x, y } = pointToPixel(point, sourceW, sourceH, boxW, boxH);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const rect = node.getBoundingClientRect();
+    const boxRect = node.offsetParent?.getBoundingClientRect()
+      ?? { left: 0, top: 0 };
+    const dx = x - (rect.left - boxRect.left);
+    const dy = y - (rect.top - boxRect.top);
+    node.style.setProperty('--px', x.toFixed(1));
+    node.style.setProperty('--py', y.toFixed(1));
+    node.style.setProperty('--leader-len', Math.hypot(dx, dy).toFixed(1) + 'px');
+    node.style.setProperty(
+      '--leader-angle',
+      (Math.atan2(dy, dx) * 180 / Math.PI).toFixed(1) + 'deg',
+    );
+  }
+}
+
 let store = null;
 let lastDrawnIndex = -1;
 let scrubProgressDebug = 0;
@@ -429,9 +473,13 @@ function runEngine(config, overlayNodes) {
   function handleResize() {
     const resized = resizeCanvas(canvas);
     if (resized && lastSource) drawCover(context, lastSource);
+    const rect = stickyWrapper.getBoundingClientRect();
+    const sourceW = lastSource?.width ?? poster.naturalWidth;
+    const sourceH = lastSource?.height ?? poster.naturalHeight;
+    positionAnnotations(sourceW, sourceH, rect.width, rect.height);
   }
   new ResizeObserver(handleResize).observe(stickyWrapper);
-  resizeCanvas(canvas);
+  handleResize();
 
   function tick(now) {
     const dt = Math.min(0.1, Math.max(0, (now - lastTime) / 1000));
@@ -553,6 +601,7 @@ function runVideoEngine(config, overlayNodes, video) {
     sectionTop: scrub.offsetTop,
     distance: Math.max(1, scrub.offsetHeight - innerHeight),
   };
+  const stickyWrapper = scrub.querySelector('.scrub__sticky');
   const preserveProgressGeometry = () => {
     if (Math.abs(innerWidth - progressGeometry.width) >= 1) {
       scrub.style.setProperty('height', config.scrub.heightVh + 'vh');
@@ -561,11 +610,19 @@ function runVideoEngine(config, overlayNodes, video) {
         sectionTop: scrub.offsetTop,
         distance: Math.max(1, scrub.offsetHeight - innerHeight),
       };
-      return;
+    } else {
+      scrub.style.setProperty('height', (progressGeometry.distance + innerHeight) + 'px');
     }
-    scrub.style.setProperty('height', (progressGeometry.distance + innerHeight) + 'px');
+    const rect = stickyWrapper.getBoundingClientRect();
+    positionAnnotations(
+      video.videoWidth,
+      video.videoHeight,
+      rect.width,
+      rect.height,
+    );
   };
   addEventListener('resize', preserveProgressGeometry);
+  preserveProgressGeometry();
   const readProgress = () => {
     if (Math.abs(innerWidth - progressGeometry.width) >= 1) {
       progressGeometry = {
@@ -643,6 +700,13 @@ async function start() {
     await loadPoster(config);
     overlayNodes = renderCopy(config);
     await loadFont(config);
+    const stickyRect = scrub.querySelector('.scrub__sticky').getBoundingClientRect();
+    positionAnnotations(
+      poster.naturalWidth,
+      poster.naturalHeight,
+      stickyRect.width,
+      stickyRect.height,
+    );
   } catch (error) {
     removeVideoPrime();
     showFatalError(error);

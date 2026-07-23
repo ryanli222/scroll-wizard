@@ -151,28 +151,90 @@ a:focus-visible {
 .overlays { position: absolute; inset: 0; pointer-events: none; perspective: 1000px; }
 .overlay {
   position: absolute;
-  bottom: clamp(3rem, 10vh, 7rem);
   width: min(34rem, calc(100% - 2rem));
-  transform: rotateX(calc(var(--rx, 0deg) + (1 - var(--reveal, 1)) * 8deg))
+  transform: translateX(var(--tx, 0))
+    rotateX(calc(var(--rx, 0deg) + (1 - var(--reveal, 1)) * 6deg))
     rotateY(var(--ry, 0deg));
   transform-style: preserve-3d;
-  translate: 0 calc((1 - var(--reveal, 1)) * 28px);
-  opacity: 0;
-  transition: translate 320ms cubic-bezier(.16, 1, .3, 1),
-    transform 260ms cubic-bezier(.23, 1, .32, 1);
+  translate: 0 calc((1 - var(--reveal, 1)) * var(--reveal-travel, 24px));
+  opacity: 1;
+  filter: blur(calc((1 - var(--reveal, 1)) * 4px));
+  transition: translate 320ms var(--ease, cubic-bezier(.16, 1, .3, 1)),
+    transform 260ms var(--ease, cubic-bezier(.16, 1, .3, 1)),
+    opacity 260ms var(--ease, cubic-bezier(.16, 1, .3, 1)),
+    filter 260ms var(--ease, cubic-bezier(.16, 1, .3, 1));
 }
-.overlay--center { left: 50%; margin-left: -17rem; }
+
+/* Horizontal placement */
+.overlay--center { left: 50%; --tx: -50%; }
 .overlay--left { left: clamp(1.5rem, 5vw, 5rem); }
 .overlay--right { right: clamp(1.5rem, 5vw, 5rem); }
+
+/* Vertical anchor */
+.overlay--anchor-bottom { bottom: clamp(3rem, 10vh, 7rem); }
+.overlay--anchor-top { top: clamp(4.5rem, 13vh, 9rem); }
+.overlay--anchor-middle {
+  top: 50%;
+  translate: 0 calc(-50% + (1 - var(--reveal, 1)) * var(--reveal-travel, 24px));
+}
+
+/* Variants: bare is the unframed default; glass is reserved for panels. */
+.overlay--hero { width: min(60rem, calc(100% - 4rem)); text-align: center; }
+.overlay--hero .overlay__title {
+  font-size: clamp(2.75rem, 8vw, 6rem);
+  letter-spacing: -.03em;
+}
+.overlay--hero .overlay__body { max-width: 46ch; margin-inline: auto; }
+.overlay--caption { width: min(22rem, calc(100% - 2rem)); }
+.overlay--caption .overlay__title { font-size: clamp(1rem, 2vw, 1.4rem); }
+.overlay--metric .overlay__title {
+  font-size: clamp(3rem, 10vw, 6rem);
+  line-height: .95;
+}
+.overlay--panel {
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  backdrop-filter: blur(20px) saturate(1.3);
+}
+.overlay--annotation { width: max-content; max-width: 18rem; }
+.overlay__leader {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--leader-len, 2rem);
+  height: 1px;
+  background: var(--accent);
+  transform: rotate(var(--leader-angle, 0deg));
+  transform-origin: left center;
+  pointer-events: none;
+}
+.overlay__leader::after {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  content: "";
+}
+
+/* Direction presets mirror references/directions.json structural motion. */
+body.dir-minimal { --ease: cubic-bezier(.23, 1, .32, 1); --reveal-travel: 16px; }
+body.dir-cinematic { --ease: cubic-bezier(.4, 0, .2, 1); --reveal-travel: 12px; }
+body.dir-technical { --ease: cubic-bezier(.85, 0, .15, 1); --reveal-travel: 0px; }
+body.dir-bold { --ease: cubic-bezier(.16, 1, .3, 1); --reveal-travel: 24px; }
 .overlay__index {
-  display: block;
+  display: none;
   font-size: .75rem;
   letter-spacing: .25em;
   opacity: .55;
   margin-bottom: 1rem;
 }
 .overlay__kicker {
-  display: block;
+  display: none;
   font-size: .8rem;
   font-weight: 600;
   letter-spacing: .25em;
@@ -181,6 +243,8 @@ a:focus-visible {
   margin-bottom: .75rem;
   transform: translateZ(12px);
 }
+.overlay--show-index .overlay__index { display: block; }
+.overlay--show-kicker .overlay__kicker { display: block; }
 .overlay__cta, .outro__cta {
   pointer-events: auto;
   display: inline-grid;
@@ -250,8 +314,9 @@ h1, h2, h3 { font-family: var(--display); }
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
     padding-bottom: 1px;
-    bottom: max(3rem, env(safe-area-inset-bottom));
   }
+  .overlay--anchor-bottom { bottom: max(3rem, env(safe-area-inset-bottom)); }
+  .overlay--anchor-top { top: max(4.5rem, env(safe-area-inset-top)); }
   .chrome__nav { display: none; }
   .overlay__kicker, .overlay__title, .overlay__body, .overlay__cta {
     transform: none;
@@ -277,8 +342,9 @@ h1, h2, h3 { font-family: var(--display); }
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
     padding-bottom: 1px;
-    bottom: 1.5rem;
   }
+  .overlay--anchor-bottom { bottom: 1.5rem; }
+  .overlay--anchor-top { top: 1.5rem; }
   .chrome__nav { display: none; }
   .overlay__kicker, .overlay__title, .overlay__body, .overlay__cta {
     transform: none;
@@ -306,7 +372,10 @@ h1, h2, h3 { font-family: var(--display); }
     position: relative;
     inset: auto;
     width: 100%;
+    translate: none;
     transform: none;
+    filter: none !important;
     opacity: 1 !important;
+    transition: opacity 200ms ease;
   }
 }
