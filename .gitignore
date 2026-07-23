@@ -7,3 +7,4 @@ coverage/
 .scroll-wizard-*
 site.tmp*/
 site.old*/
+.superpowers/
