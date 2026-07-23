@@ -55,6 +55,19 @@ a:focus-visible {
 .scrub__poster { object-fit: cover; transition: opacity 240ms ease; }
 .scrub__poster.is-hidden { opacity: 0; pointer-events: none; }
 .scrub__canvas { display: block; }
+.parallax-layers { position: absolute; inset: 0; pointer-events: none; }
+.parallax-layers[hidden] { display: none; }
+.parallax-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0.35;
+  translate: 0 calc(var(--parallax, 0) * 80px);
+}
+.parallax-layer:nth-child(1) { background: radial-gradient(circle at 20% 25%, var(--accent) 0%, transparent 55%); }
+.parallax-layer:nth-child(2) { background: radial-gradient(circle at 80% 30%, var(--accent) 0%, transparent 45%); }
+.parallax-layer:nth-child(3) { background: radial-gradient(circle at 50% 80%, var(--surface) 0%, transparent 60%); }
 .scrub__vignette {
   position: absolute;
   inset: 0;
@@ -203,7 +216,7 @@ h1, h2, h3 { font-family: var(--display); }
   .scrub { height: auto !important; }
   .scrub__sticky { position: relative; height: auto; overflow: visible; }
   .scrub__poster { position: relative; width: 100%; min-height: 60vh; }
-  .scrub__canvas, .scrub__video, .loader { display: none; }
+  .scrub__canvas, .scrub__video, .loader, .parallax-layers { display: none; }
   .overlays { position: relative; display: grid; gap: 1rem; padding: 1rem; }
   .overlay, .overlay--center, .overlay--left, .overlay--right {
     position: relative;

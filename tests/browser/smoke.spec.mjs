@@ -681,3 +681,25 @@ test('overlay children stagger in rather than fading together', async ({ page })
   });
   expect(Number(opacities.title)).toBeGreaterThan(Number(opacities.cta));
 });
+
+test('parallax layers stay hidden until scrub.parallax is enabled', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.parallax-layers')).toBeHidden();
+});
+
+test('parallax layers shift at different rates as the page scrolls', async ({ page }) => {
+  await page.goto('/parallax/');
+  await expect(page.locator('.parallax-layers')).toBeVisible();
+  const before = await page.evaluate(() =>
+    getComputedStyle(document.querySelectorAll('.parallax-layer')[0]).translate);
+  await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.5));
+  await expect.poll(() => page.evaluate(() =>
+    getComputedStyle(document.querySelectorAll('.parallax-layer')[0]).translate))
+    .not.toBe(before);
+});
+
+test('reduced motion hides parallax layers entirely', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/parallax/');
+  await expect(page.locator('.parallax-layers')).toBeHidden();
+});

@@ -132,9 +132,12 @@ const processConfig = {
   },
 };
 
+const parallaxConfig = { ...config, scrub: { ...config.scrub, parallax: true } };
+
 const FIXTURE_CONFIGS = {
   '/video/': videoConfig,
   '/process/': processConfig,
+  '/parallax/': parallaxConfig,
 };
 
 function fixturePrefix(pathname) {

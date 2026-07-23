@@ -398,13 +398,29 @@ function updateOverlays(overlayNodes, raw) {
   }
 }
 
+function initParallax(config) {
+  if (config.scrub?.parallax !== true) return [];
+  const container = document.querySelector('.parallax-layers');
+  container.hidden = false;
+  return [...container.querySelectorAll('.parallax-layer')].map((node) => ({
+    node,
+    rate: Number(node.dataset.rate) || 0,
+  }));
+}
+
+function updateParallax(layers, raw) {
+  for (const { node, rate } of layers) {
+    node.style.setProperty('--parallax', String(raw * rate));
+  }
+}
+
 function updateProgressBar() {
   const pageProgress = Math.min(1, Math.max(0,
     scrollY / Math.max(1, document.documentElement.scrollHeight - innerHeight)));
   progressBar.style.width = (pageProgress * 100) + '%';
 }
 
-function runEngine(config, overlayNodes) {
+function runEngine(config, overlayNodes, parallaxLayers) {
   const holds = (config.overlays ?? [])
     .filter((overlay) => overlay.hold)
     .map((overlay) => overlay.at);
@@ -462,6 +478,7 @@ function runEngine(config, overlayNodes) {
     }
 
     updateOverlays(overlayNodes, raw);
+    updateParallax(parallaxLayers, raw);
     updateProgressBar();
 
     requestAnimationFrame(tick);
@@ -532,7 +549,7 @@ function installVideoPrime(video) {
   return cleanup;
 }
 
-function runVideoEngine(config, overlayNodes, video) {
+function runVideoEngine(config, overlayNodes, video, parallaxLayers) {
   const holds = (config.overlays ?? [])
     .filter((overlay) => overlay.hold)
     .map((overlay) => overlay.at);
@@ -603,6 +620,7 @@ function runVideoEngine(config, overlayNodes, video) {
       video.currentTime = time;
     }
     updateOverlays(overlayNodes, raw);
+    updateParallax(parallaxLayers, raw);
     updateProgressBar();
     requestAnimationFrame(tick);
   }
@@ -660,6 +678,8 @@ async function start() {
     }
   }
 
+  const parallaxLayers = initParallax(config);
+
   if (selectScrubMode(config) === 'video') {
     let video;
     try {
@@ -669,9 +689,9 @@ async function start() {
       showFatalError(error);
       return;
     }
-    runVideoEngine(config, overlayNodes, video);
+    runVideoEngine(config, overlayNodes, video, parallaxLayers);
   } else {
-    runEngine(config, overlayNodes);
+    runEngine(config, overlayNodes, parallaxLayers);
   }
 }
 
