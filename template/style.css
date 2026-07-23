@@ -205,10 +205,17 @@ a:focus-visible {
   letter-spacing: -.01em;
   text-decoration: none;
   pointer-events: auto;
-  transition: opacity 160ms ease, transform 160ms cubic-bezier(.23, 1, .32, 1);
+  transition: opacity 160ms ease;
 }
-.overlay__cta:hover, .outro__cta:hover { opacity: .9; transform: translateY(-1px); }
-.overlay__cta:active, .outro__cta:active { transform: scale(.97); }
+.overlay__cta:hover, .outro__cta:hover { opacity: .9; }
+.overlay__cta:active, .outro__cta:active { opacity: .8; }
+@media (hover: hover) and (pointer: fine) {
+  .overlay__cta, .outro__cta {
+    transition: opacity 160ms ease, transform 160ms cubic-bezier(.23, 1, .32, 1);
+  }
+  .overlay__cta:hover, .outro__cta:hover { transform: translateY(-1px); }
+  .overlay__cta:active, .outro__cta:active { transform: scale(.97); }
+}
 .overlay__title {
   margin: 0 0 .75rem;
   font-size: clamp(2.25rem, 5vw, 3.75rem);
@@ -378,6 +385,10 @@ h1, h2, h3 { font-family: var(--display); }
     transition: opacity 200ms ease;
   }
   .overlay__leader { display: none; }
+  .overlay__cta,
+  .outro__cta { transition: opacity 160ms ease; }
   .overlay__cta:hover,
-  .overlay__cta:active { transform: none; }
+  .outro__cta:hover,
+  .overlay__cta:active,
+  .outro__cta:active { transform: none; }
 }

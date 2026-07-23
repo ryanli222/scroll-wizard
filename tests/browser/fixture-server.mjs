@@ -128,6 +128,11 @@ const config = {
       cta: { label: 'Learn more', href: '#learn' },
     },
   ],
+  outro: {
+    headline: 'Fixture outro',
+    body: 'Fixture closing copy.',
+    cta: { label: 'Finish', href: '#finish' },
+  },
 };
 
 const variantOverlays = [

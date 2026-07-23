@@ -67,9 +67,23 @@ describe('template contract', () => {
     });
   });
 
-  it('neutralizes overlay CTA hover and press transforms under reduced motion', () => {
+  it('scopes CTA movement to fine hover and neutralizes both CTAs under reduced motion', () => {
+    const fineHover = css.match(
+      /@media \(hover: hover\) and \(pointer: fine\)\s*\{[\s\S]*?\n}/,
+    )?.[0] ?? '';
     const reduced = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*\n}/)?.[0] ?? '';
-    expect(reduced).toMatch(/\.overlay__cta:hover[^}]*transform:\s*none/s);
-    expect(reduced).toMatch(/\.overlay__cta:active[^}]*transform:\s*none/s);
+
+    expect(fineHover).toMatch(
+      /\.overlay__cta:hover,\s*\.outro__cta:hover\s*\{[^}]*transform:\s*translateY\(-1px\)/s,
+    );
+    expect(fineHover).toMatch(
+      /\.overlay__cta:active,\s*\.outro__cta:active\s*\{[^}]*transform:\s*scale\(\.97\)/s,
+    );
+    expect(reduced).toMatch(
+      /\.overlay__cta,\s*\.outro__cta\s*\{[^}]*transition:\s*opacity 160ms ease;/s,
+    );
+    expect(reduced).toMatch(
+      /\.overlay__cta:hover,\s*\.outro__cta:hover,\s*\.overlay__cta:active,\s*\.outro__cta:active\s*\{[^}]*transform:\s*none/s,
+    );
   });
 });

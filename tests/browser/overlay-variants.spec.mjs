@@ -327,6 +327,37 @@ test.describe('overlay variants & direction runtime', () => {
     }
   });
 
+  test('coarse pointers keep overlay and outro CTA feedback motionless', async ({ browser }) => {
+    const context = await browser.newContext({
+      viewport: { width: 844, height: 390 },
+      hasTouch: true,
+      isMobile: true,
+    });
+    const page = await context.newPage();
+    try {
+      await page.goto('/?config=variants');
+      expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+      expect(await page.evaluate(() =>
+        matchMedia('(hover: hover) and (pointer: fine)').matches)).toBe(false);
+
+      for (const selector of ['.overlay__cta', '.outro__cta']) {
+        const cta = page.locator(selector).first();
+        await cta.scrollIntoViewIfNeeded();
+        await cta.hover();
+        await expect(cta).toHaveCSS('transform', 'none');
+        expect(await cta.evaluate((node) => getComputedStyle(node).transitionProperty))
+          .not.toContain('transform');
+        const box = await cta.boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await expect(cta).toHaveCSS('transform', 'none');
+        await page.mouse.up();
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
   test('reduced motion shows a static six-variant list and suppresses leaders', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/?config=variants');
@@ -339,14 +370,19 @@ test.describe('overlay variants & direction runtime', () => {
     for (const content of await page.locator('.overlay__content').all()) {
       await expect(content).toHaveCSS('transform', 'none');
     }
-    const cta = page.locator('.overlay__cta').first();
-    await cta.hover();
-    await expect(cta).toHaveCSS('transform', 'none');
-    const box = await cta.boundingBox();
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await expect(cta).toHaveCSS('transform', 'none');
-    await page.mouse.up();
+    for (const selector of ['.overlay__cta', '.outro__cta']) {
+      const cta = page.locator(selector).first();
+      await cta.scrollIntoViewIfNeeded();
+      await cta.hover();
+      await expect(cta).toHaveCSS('transform', 'none');
+      expect(await cta.evaluate((node) => getComputedStyle(node).transitionProperty))
+        .not.toContain('transform');
+      const box = await cta.boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await expect(cta).toHaveCSS('transform', 'none');
+      await page.mouse.up();
+    }
   });
 
   test('rejects a directed raw config that omits generated runtime preset data', async ({ page }) => {
