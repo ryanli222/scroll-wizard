@@ -10,6 +10,7 @@ import {
   holdFrames,
   lingerEase,
   overlayOpacity,
+  pointToPixel,
   progressToFrame,
   progressToTime,
   recommendHeightVh,
@@ -493,5 +494,34 @@ describe('validateConfig overlay variant/anchor/point', () => {
   it('rejects an out-of-range point', () => {
     const { errors } = validateConfig(withOverlay({ variant: 'annotation', point: [1.5, 0.4] }));
     expect(errors.some((e) => e.code === 'overlay.point')).toBe(true);
+  });
+});
+
+describe('pointToPixel', () => {
+  it('maps center to box center regardless of crop', () => {
+    const p = pointToPixel([0.5, 0.5], 1000, 500, 800, 800);
+    expect(p.x).toBeCloseTo(400);
+    expect(p.y).toBeCloseTo(400);
+  });
+
+  it('maps a point on a wider-than-box image (horizontal crop)', () => {
+    const mid = pointToPixel([0.5, 0.5], 1000, 500, 500, 500);
+    expect(mid.x).toBeCloseTo(250);
+    const right = pointToPixel([0.75, 0.5], 1000, 500, 500, 500);
+    expect(right.x).toBeCloseTo(500);
+    const left = pointToPixel([0.25, 0.5], 1000, 500, 500, 500);
+    expect(left.x).toBeCloseTo(0);
+  });
+
+  it('maps a point on a taller-than-box image (vertical crop)', () => {
+    const mid = pointToPixel([0.5, 0.5], 500, 1000, 500, 500);
+    expect(mid.y).toBeCloseTo(250);
+    const bottom = pointToPixel([0.5, 0.75], 500, 1000, 500, 500);
+    expect(bottom.y).toBeCloseTo(500);
+  });
+
+  it('returns NaN for invalid input', () => {
+    const p = pointToPixel([0.5, 0.5], 0, 500, 800, 800);
+    expect(Number.isNaN(p.x)).toBe(true);
   });
 });

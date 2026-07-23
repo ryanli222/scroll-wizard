@@ -80,6 +80,25 @@ export function coverRect(imgW, imgH, canvasW, canvasH) {
   return { sx: 0, sy: (imgH - sh) / 2, sw: imgW, sh };
 }
 
+// Maps a normalized [nx, ny] on the source image to a pixel offset within a
+// box that displays the image with object-fit: cover. Inverse of the crop in
+// coverRect: the visible source window is [sx, sx+sw] x [sy, sy+sh], scaled to
+// fill the box. Used to pin annotations/hotspots to a spot on the footage.
+export function pointToPixel(point, imgW, imgH, boxW, boxH) {
+  const [nx, ny] = Array.isArray(point) ? point : [NaN, NaN];
+  const crop = coverRect(imgW, imgH, boxW, boxH);
+  if (crop.sw <= 0 || crop.sh <= 0
+      || ![nx, ny, boxW, boxH].every(Number.isFinite)) {
+    return { x: NaN, y: NaN };
+  }
+  const srcX = nx * imgW;
+  const srcY = ny * imgH;
+  return {
+    x: ((srcX - crop.sx) / crop.sw) * boxW,
+    y: ((srcY - crop.sy) / crop.sh) * boxH,
+  };
+}
+
 export function canvasSize(cssW, cssH, dpr, maxDpr = 2) {
   const ratio = clamp(Number.isFinite(dpr) ? dpr : 1, 1, maxDpr);
   return {
