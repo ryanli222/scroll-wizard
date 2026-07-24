@@ -1,0 +1,84 @@
+{
+  "entries": [
+    {
+      "url": "https://izanami-official.com",
+      "label": "Izanami",
+      "bucket": "full3d/flythrough",
+      "verified": true,
+      "shot": "references/inspiration-shots/izanami.png",
+      "note": "Continuous full-bleed footage drift behind near-static staggered fade-rise copy."
+    },
+    {
+      "url": "https://izanami-official.com",
+      "label": "Izanami",
+      "bucket": "full3d/walkthrough",
+      "verified": true,
+      "shot": "references/inspiration-shots/izanami.png",
+      "note": "Calm human-pace camera travel with rotated vertical section labels."
+    },
+    {
+      "url": "https://izanami-official.com",
+      "label": "Izanami",
+      "bucket": "direction/cinematic",
+      "verified": true,
+      "shot": "references/inspiration-shots/izanami.png",
+      "note": "High-contrast serif over desaturated atmosphere; hairline View -> links with a rule lead-in."
+    },
+    {
+      "url": "https://buildyourdatacenter.nrg.com",
+      "label": "NRG Build Your Data Center",
+      "bucket": "full3d/walkthrough",
+      "verified": true,
+      "shot": "references/inspiration-shots/nrg.png",
+      "note": "Papercraft isometric build-world advanced by a numbered stepper."
+    },
+    {
+      "url": "https://buildyourdatacenter.nrg.com",
+      "label": "NRG Build Your Data Center",
+      "bucket": "direction/bold",
+      "verified": true,
+      "shot": "references/inspiration-shots/nrg.png",
+      "note": "Floating diorama objects settling with parallax depth."
+    },
+    {
+      "url": "https://explanideo.com",
+      "label": "explanideo",
+      "bucket": "product",
+      "verified": true,
+      "shot": "references/inspiration-shots/explanideo.png",
+      "note": "Per-beat product with chapter tint cross-fade, per-beat BUY, and a circular mask-wipe scene change."
+    },
+    {
+      "url": "https://www.apple.com/airpods-pro",
+      "label": "Apple AirPods Pro",
+      "bucket": "direction/minimal",
+      "verified": true,
+      "shot": "references/inspiration-shots/apple.png",
+      "note": "Full-bleed video hero with an explicit pause control; restrained accent only on the primary CTA."
+    },
+    {
+      "url": "https://nothing.tech",
+      "label": "Nothing",
+      "bucket": "direction/technical",
+      "verified": true,
+      "shot": "references/inspiration-shots/nothing.png",
+      "note": "Dot-matrix display, uppercase labels, strict exposed grid with coordinate/index markers."
+    },
+    {
+      "url": "https://alethia.earth",
+      "label": "Alethia",
+      "bucket": "direction/bold",
+      "verified": true,
+      "shot": "references/inspiration-shots/alethia.png",
+      "note": "Heavy grotesk headlines over a dark saturated field with one bright accent; floating hero subject."
+    },
+    {
+      "url": "https://explanideo.com",
+      "label": "explanideo (teardown concept)",
+      "bucket": "full3d/teardown",
+      "verified": true,
+      "shot": "references/inspiration-shots/explanideo.png",
+      "note": "Exploded product parts separating with annotated callouts; concept cue for teardown motion."
+    }
+  ]
+}
