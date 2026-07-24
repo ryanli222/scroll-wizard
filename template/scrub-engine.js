@@ -24,6 +24,10 @@ const loadProgress = document.getElementById('load-progress');
 const loader = document.getElementById('loader');
 const outro = document.getElementById('outro');
 const catalogGridSection = document.getElementById('catalog-grid');
+const catalogCarouselSection = document.getElementById('catalog-carousel');
+const catalogCarouselTrack = catalogCarouselSection.querySelector('.catalog-carousel__track');
+const catalogCarouselPrev = catalogCarouselSection.querySelector('.catalog-carousel__prev');
+const catalogCarouselNext = catalogCarouselSection.querySelector('.catalog-carousel__next');
 const fatalError = document.getElementById('fatal-error');
 const footerBrand = document.getElementById('footer-brand');
 const progressBar = document.getElementById('progress-bar');
@@ -100,6 +104,27 @@ function renderCatalogGrid(config) {
   const cards = config.catalog.items.map(renderCatalogCard);
   catalogGridSection.append(...cards);
   catalogGridSection.hidden = false;
+}
+
+function renderCatalogCarousel(config) {
+  if (!config.catalog?.carousel) return;
+  for (const item of config.catalog.items) {
+    const slide = element('div', 'catalog-carousel__item');
+    const image = element('img', 'catalog-carousel__image');
+    image.src = item.image;
+    image.alt = item.name;
+    slide.append(image, element('p', 'catalog-carousel__name', item.name));
+    catalogCarouselTrack.append(slide);
+  }
+  const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  const scrollByOneItem = (direction) => {
+    const item = catalogCarouselTrack.querySelector('.catalog-carousel__item');
+    const amount = (item?.getBoundingClientRect().width ?? 300) + 16;
+    catalogCarouselTrack.scrollBy({ left: direction * amount, behavior });
+  };
+  catalogCarouselPrev.addEventListener('click', () => scrollByOneItem(-1));
+  catalogCarouselNext.addEventListener('click', () => scrollByOneItem(1));
+  catalogCarouselSection.hidden = false;
 }
 
 function applyTheme(config) {
@@ -618,6 +643,7 @@ async function start() {
     await loadPoster(config);
     overlayNodes = renderCopy(config);
     renderCatalogGrid(config);
+    renderCatalogCarousel(config);
     await loadFont(config);
   } catch (error) {
     removeVideoPrime();
