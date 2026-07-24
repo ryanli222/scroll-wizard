@@ -121,6 +121,18 @@ const videoConfig = {
 };
 delete videoConfig.frames;
 
+const catalogConfig = {
+  ...videoConfig,
+  catalog: {
+    items: [
+      { name: 'Original', image: 'catalog/original.webp', hoverImage: 'catalog/original-alt.webp' },
+      { name: 'Oolong', image: 'catalog/oolong.webp' },
+    ],
+    grid: true,
+    carousel: true,
+  },
+};
+
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -131,12 +143,18 @@ const contentTypes = {
   '.webp': 'image/webp',
 };
 
+const FIXTURE_PREFIXES = ['/video', '/catalog'];
+
+function stripFixturePrefix(pathname) {
+  for (const prefix of FIXTURE_PREFIXES) {
+    if (pathname === prefix || pathname === prefix + '/') return '/index.html';
+    if (pathname.startsWith(prefix + '/')) return pathname.slice(prefix.length);
+  }
+  return pathname;
+}
+
 async function serveStatic(res, pathname) {
-  const sitePath = pathname === '/video' || pathname === '/video/'
-    ? '/index.html'
-    : pathname.startsWith('/video/')
-      ? pathname.slice('/video'.length)
-      : pathname;
+  const sitePath = stripFixturePrefix(pathname);
   const relative = normalize(sitePath === '/' ? '/index.html' : sitePath)
     .replace(/^([/\\]\.\.)+/, '');
   const filePath = join(templateDir, relative);
@@ -165,9 +183,13 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (pathname === '/config.json' || pathname === '/video/config.json') {
+  if (pathname === '/config.json' || pathname === '/video/config.json'
+      || pathname === '/catalog/config.json') {
+    const body = pathname === '/video/config.json' ? videoConfig
+      : pathname === '/catalog/config.json' ? catalogConfig
+      : config;
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify(pathname.startsWith('/video/') ? videoConfig : config));
+    res.end(JSON.stringify(body));
     return;
   }
 
@@ -188,6 +210,37 @@ const server = createServer(async (req, res) => {
     }
     res.writeHead(200, { 'Content-Type': contentTypes['.webp'] });
     res.end(await readFile(videoPosterPath));
+    return;
+  }
+
+  if (pathname === '/catalog/media/video.webm') {
+    if (!videoFixtureStatus.available) {
+      res.writeHead(503).end(videoFixtureStatus.reason);
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': contentTypes['.webm'] });
+    res.end(await readFile(videoPath));
+    return;
+  }
+
+  if (pathname === '/catalog/media/poster.webp') {
+    if (!videoFixtureStatus.available) {
+      res.writeHead(503).end(videoFixtureStatus.reason);
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': contentTypes['.webp'] });
+    res.end(await readFile(videoPosterPath));
+    return;
+  }
+
+  const catalogImageMatch = /^\/catalog\/catalog\/(original|original-alt|oolong)\.webp$/.exec(pathname);
+  if (catalogImageMatch) {
+    // Same convention as the /frames/frame-*.webp route below: a .webp-named
+    // URL served as a tiny synthesized PNG, since content is sniffed from
+    // bytes, not the URL extension.
+    res.writeHead(200, { 'Content-Type': 'image/png' });
+    const shade = { original: 200, 'original-alt': 80, oolong: 140 }[catalogImageMatch[1]];
+    res.end(makePng(shade, 120, 60));
     return;
   }
 

@@ -23,6 +23,7 @@ const overlayLayer = document.getElementById('overlay-layer');
 const loadProgress = document.getElementById('load-progress');
 const loader = document.getElementById('loader');
 const outro = document.getElementById('outro');
+const catalogGridSection = document.getElementById('catalog-grid');
 const fatalError = document.getElementById('fatal-error');
 const footerBrand = document.getElementById('footer-brand');
 const progressBar = document.getElementById('progress-bar');
@@ -74,6 +75,31 @@ function renderOutro(data) {
   if (data.headline) outro.append(element('h1', 'outro__headline', data.headline));
   if (data.body) outro.append(element('p', 'outro__body', data.body));
   if (data.cta) outro.append(linkButton(data.cta, 'outro__cta'));
+}
+
+function renderCatalogCard(item) {
+  const card = element('article', 'catalog-card');
+  const media = element('div', 'catalog-card__media');
+  const image = element('img', 'catalog-card__image');
+  image.src = item.image;
+  image.alt = item.name;
+  media.append(image);
+  if (item.hoverImage) {
+    const altImage = element('img', 'catalog-card__image catalog-card__image--alt');
+    altImage.src = item.hoverImage;
+    altImage.alt = '';
+    media.append(altImage);
+  }
+  card.append(media, element('h3', 'catalog-card__name', item.name));
+  if (item.cta) card.append(linkButton(item.cta, 'catalog-card__cta'));
+  return card;
+}
+
+function renderCatalogGrid(config) {
+  if (!config.catalog?.grid) return;
+  const cards = config.catalog.items.map(renderCatalogCard);
+  catalogGridSection.append(...cards);
+  catalogGridSection.hidden = false;
 }
 
 function applyTheme(config) {
@@ -591,6 +617,7 @@ async function start() {
     }
     await loadPoster(config);
     overlayNodes = renderCopy(config);
+    renderCatalogGrid(config);
     await loadFont(config);
   } catch (error) {
     removeVideoPrime();
