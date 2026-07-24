@@ -335,6 +335,70 @@ describe('progressToTime', () => {
   });
 });
 
+describe('validateConfig catalog', () => {
+  const base = () => JSON.parse(JSON.stringify(validConfig));
+
+  it('accepts a valid catalog block', () => {
+    const config = base();
+    config.catalog = {
+      items: [
+        {
+          name: 'Original',
+          image: 'catalog/original.webp',
+          hoverImage: 'catalog/original-alt.webp',
+          cta: { label: 'Shop', href: '#shop' },
+        },
+        { name: 'Oolong', image: 'catalog/oolong.webp' },
+      ],
+      grid: true,
+      carousel: true,
+    };
+    expect(validateConfig(config).errors).toEqual([]);
+  });
+
+  it('rejects too few/too many items and missing name/image', () => {
+    const tooFew = base();
+    tooFew.catalog = { items: [] };
+    expect(validateConfig(tooFew).errors.map((e) => e.code)).toContain('catalog.items');
+
+    const tooMany = base();
+    tooMany.catalog = {
+      items: Array.from({ length: 13 }, (_, i) => ({ name: 'n' + i, image: 'catalog/n' + i + '.webp' })),
+    };
+    expect(validateConfig(tooMany).errors.map((e) => e.code)).toContain('catalog.items');
+
+    const noName = base();
+    noName.catalog = { items: [{ name: '', image: 'catalog/x.webp' }] };
+    expect(validateConfig(noName).errors.map((e) => e.code)).toContain('catalog.item.name');
+
+    const badImage = base();
+    badImage.catalog = { items: [{ name: 'X', image: 'frames/x.webp' }] };
+    expect(validateConfig(badImage).errors.map((e) => e.code)).toContain('catalog.item.image');
+
+    const badHover = base();
+    badHover.catalog = { items: [{ name: 'X', image: 'catalog/x.webp', hoverImage: 'not-catalog/y.webp' }] };
+    expect(validateConfig(badHover).errors.map((e) => e.code)).toContain('catalog.item.hoverImage');
+
+    const badCta = base();
+    badCta.catalog = { items: [{ name: 'X', image: 'catalog/x.webp', cta: { label: '', href: '#' } }] };
+    expect(validateConfig(badCta).errors.map((e) => e.code)).toContain('cta.label');
+  });
+
+  it('validates catalog.grid and catalog.carousel as booleans', () => {
+    const badGrid = base();
+    badGrid.catalog = { items: [{ name: 'X', image: 'catalog/x.webp' }], grid: 'yes' };
+    expect(validateConfig(badGrid).errors.map((e) => e.code)).toContain('catalog.grid');
+
+    const badCarousel = base();
+    badCarousel.catalog = { items: [{ name: 'X', image: 'catalog/x.webp' }], carousel: 1 };
+    expect(validateConfig(badCarousel).errors.map((e) => e.code)).toContain('catalog.carousel');
+
+    const good = base();
+    good.catalog = { items: [{ name: 'X', image: 'catalog/x.webp' }], grid: true, carousel: false };
+    expect(validateConfig(good).errors).toEqual([]);
+  });
+});
+
 describe('validateConfig v2', () => {
   const base = () => JSON.parse(JSON.stringify({
     brand: { name: 'X' },
