@@ -17,6 +17,7 @@ import {
 } from './scrub-core.js';
 import { assembleSections, currentPoster } from './sections-core.js';
 import { renderSections } from './section-renderer.js';
+import { installInteractions } from './interactions.js';
 
 const sectionContainer = document.getElementById('site-sections');
 const scrub = document.getElementById('scrub');
@@ -378,7 +379,7 @@ function drawCover(context, source) {
 }
 
 function positionAnnotations(sourceW, sourceH, boxW, boxH) {
-  for (const node of overlayLayer.querySelectorAll('.overlay--annotation')) {
+  for (const node of overlayLayer.querySelectorAll('.hotspot, .overlay--annotation')) {
     let point;
     try {
       point = JSON.parse(node.dataset.point);
@@ -386,8 +387,10 @@ function positionAnnotations(sourceW, sourceH, boxW, boxH) {
       continue;
     }
     const { x, y } = pointToPixel(point, sourceW, sourceH, boxW, boxH);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (node.classList.contains('hotspot')) { node.style.setProperty('--px', x.toFixed(1) + 'px'); node.style.setProperty('--py', y.toFixed(1) + 'px'); continue; }
     const content = node.querySelector('.overlay__content');
-    if (!content || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (!content) continue;
 
     // offset* is layout geometry before the reveal transform. Basing the leader
     // on it keeps the endpoint stable while the inner label animates.
@@ -689,7 +692,10 @@ async function start() {
 
     applyTheme(config);
     const sections = assembleSections(config);
-    renderSections({ container: sectionContainer, scrubElement: scrub, outroElement: outro, sections, poster: currentPoster(config) });
+    const rendered = renderSections({ container: sectionContainer, scrubElement: scrub, outroElement: outro, sections, poster: currentPoster(config) });
+    let lenis = null;
+    if (!reducedMotion && globalThis.Lenis) { try { lenis = new globalThis.Lenis({ autoRaf: true, anchors: true }); } catch (error) { console.warn('Lenis failed to initialize:', error.message); } }
+    installInteractions({ config, sections, sectionNodes: rendered.sectionNodes, formNodes: rendered.formNodes, scrubElement: scrub, overlayLayer, lenis, reducedMotion });
     footerBrand.textContent = config.brand.name;
     if (!scrub.isConnected) return;
     if (!reducedMotion && selectScrubMode(config) === 'video') {
@@ -718,14 +724,6 @@ async function start() {
   if (reducedMotion) {
     applyReducedMotion(overlayNodes);
     return;
-  }
-
-  if (globalThis.Lenis) {
-    try {
-      new globalThis.Lenis({ autoRaf: true, anchors: true });
-    } catch (error) {
-      console.warn('Lenis failed to initialize:', error.message);
-    }
   }
 
   if (selectScrubMode(config) === 'video') {

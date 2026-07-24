@@ -106,11 +106,12 @@ function buildCta(data, index, outro, formNodes) {
   if (data.body) content.append(node('p', 'section-copy', data.body));
   if (data.cta) content.append(link(data.cta, 'section-cta outro__cta'));
   if (data.emailCapture) {
-    const form = node('form', 'section-email'); form.noValidate = false;
+    const form = node('form', 'section-email');
+    if (data.emailAction) { form.action = data.emailAction; form.method = 'post'; form.dataset.wired = 'action'; } else form.dataset.wired = 'inline';
     const label = node('label', '', 'Email address');
     const input = node('input'); input.type = 'email'; input.required = true; input.name = 'email';
     const submit = node('button', 'section-email__submit', 'Keep me posted'); submit.type = 'submit';
-    label.append(input); form.append(label, submit); form.addEventListener('submit', (event) => event.preventDefault());
+    label.append(input); form.append(label, submit);
     content.append(form); formNodes.push(form);
   }
   result.append(content); return result;

@@ -111,3 +111,19 @@ describe('section template contract', () => {
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.site-section \.section-reveal/s);
   });
 });
+describe('Plan 3 interaction contracts', () => {
+  it('wires cinematic interactions without a scroll listener', async () => {
+    const interactions = await readFile(new URL('../../template/interactions.js', import.meta.url), 'utf8');
+    expect(interactions).toMatch(/export function installInteractions/);
+    expect(interactions).toMatch(/site-nav|waypoint-stepper|hotspot|lightbox/);
+    expect(interactions).toMatch(/createJump|beatTargetY/);
+    expect(interactions).not.toMatch(/addEventListener\(\s*['"]scroll['"]/);
+  });
+  it('delegates email submission and styles interactive chrome', async () => {
+    const renderer = await readFile(new URL('../../template/section-renderer.js', import.meta.url), 'utf8');
+    expect(renderer).toMatch(/emailAction|dataset\.wired/);
+    expect(renderer).not.toMatch(/addEventListener\('submit'/);
+    expect(css).toMatch(/\.site-nav|\.waypoint-stepper|\.hotspot|\.lightbox|\.config-picker|\.scrub__tint/);
+    expect(css).toMatch(/scale\(\.97\)|scale\(0\.97\)/);
+  });
+});
