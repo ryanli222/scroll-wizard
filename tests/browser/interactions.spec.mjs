@@ -29,6 +29,17 @@ test('spec row activates by keyboard and scrubs toward its beat', async ({ page 
   await page.waitForFunction((y) => Math.abs(scrollY - y) > 50, before);
 });
 
+test('keyboard-activating a spec row redirects an already in-flight jump instead of freezing it', async ({ page }) => {
+  await page.goto('/?fixture=interactive');
+  await page.locator('.site-nav__pill').last().click();
+  await page.waitForTimeout(150); // mid-flight: the pill's jump is still animating
+  const row = page.locator('.section-spec__row[data-beat]');
+  await row.focus();
+  await page.keyboard.press('Enter');
+  const mid = await page.evaluate(() => scrollY);
+  await page.waitForFunction((y) => Math.abs(scrollY - y) > 50, mid, { timeout: 2000 });
+});
+
 test('manual wheel input cancels an in-flight jump', async ({ page }) => {
   await page.goto('/?fixture=interactive');
   const target = await page.evaluate(() => {
