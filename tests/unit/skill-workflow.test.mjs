@@ -27,6 +27,14 @@ describe('v2 workflow documentation contracts', () => {
     );
   });
 
+  it('requires an explicit motion-plan approval stop before any video-generation call', () => {
+    expect(prose).toMatch(/ask only for .*max(?:imum)? per-clip seconds/i);
+    expect(prose).toMatch(/derived clip\/cost plan|derived clip and cost plan/i);
+    expect(prose).toMatch(
+      /end the turn for explicit `motion-plan` approval before any video-generation call/i,
+    );
+  });
+
   it('settles definitively unbilled failures at zero', () => {
     expect(prose).toMatch(
       /When a failed call is definitively unbilled, settle it with actual cost 0 to release the reservation/i,

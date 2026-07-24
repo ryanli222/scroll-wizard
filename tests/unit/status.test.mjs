@@ -39,6 +39,18 @@ async function writeJson(path, value) {
   await writeFile(path, JSON.stringify(value, null, 2) + '\n');
 }
 
+async function writeMotionPlan(projectDir, maxClipDurationSeconds = 6) {
+  await writeJson(join(projectDir, 'prompts', 'motion-plan.json'), {
+    maxClipDurationSeconds,
+    totalDurationSeconds: 8,
+    clips: [
+      { index: 1, durationSeconds: 6, beatStart: 1, beatEnd: 2 },
+      { index: 2, durationSeconds: 2, beatStart: 3, beatEnd: 3 },
+    ],
+    continuity: [{ fromClip: 1, toClip: 2, handoff: 'last-frame-to-first-frame' }],
+  });
+}
+
 async function createCompleteProject({ keyframes = true } = {}) {
   const projectDir = await temporaryProject();
   await mkdir(join(projectDir, 'prompts'), { recursive: true });
@@ -54,6 +66,7 @@ async function createCompleteProject({ keyframes = true } = {}) {
     await writeFile(join(projectDir, 'input', 'keyframes', 'first.png'), 'image');
   }
   await writeFile(join(projectDir, 'prompts', 'video.txt'), 'Video prompt\n');
+  await writeMotionPlan(projectDir);
   await writeFile(join(projectDir, 'input', 'video.mp4'), 'video');
   await writeJson(join(projectDir, 'values.json'), {
     brand: { name: 'Aster' },
@@ -182,7 +195,7 @@ describe('status inventory resolution', () => {
 
   it('reports a fully approved fresh chain as complete', () => {
     expect(resolveResume(completeInventory())).toEqual({
-      resumeStep: 8,
+      resumeStep: 9,
       staleness: [],
       incomplete: [],
       unapproved: [],
@@ -198,7 +211,7 @@ describe('status inventory resolution', () => {
       staleness: [],
       incomplete: [],
       unapproved: [
-        'brief', 'storyboard', 'stills-preview', 'video',
+        'brief', 'storyboard', 'motion-plan', 'stills-preview', 'video',
         'extraction', 'theme', 'preview',
       ],
     });
@@ -209,7 +222,7 @@ describe('status inventory resolution', () => {
     delete inventory.receipts.extraction;
 
     expect(resolveResume(inventory)).toMatchObject({
-      resumeStep: 5,
+      resumeStep: 6,
       unapproved: ['extraction', 'theme', 'preview'],
     });
   });
@@ -222,7 +235,7 @@ describe('status inventory resolution', () => {
     expect(resolveResume(inventory)).toMatchObject({
       resumeStep: 1,
       unapproved: [
-        'brief', 'storyboard', 'stills-preview', 'video',
+        'brief', 'storyboard', 'motion-plan', 'stills-preview', 'video',
         'extraction', 'theme', 'preview',
       ],
     });
@@ -233,7 +246,7 @@ describe('status inventory resolution', () => {
     delete inventory.receipts.preview;
 
     expect(resolveResume(inventory)).toEqual({
-      resumeStep: 4,
+      resumeStep: 5,
       staleness: ['video'],
       incomplete: [],
       unapproved: ['preview'],
@@ -260,7 +273,7 @@ describe('status inventory resolution', () => {
     inventory.manifests.video = null;
 
     expect(resolveResume(inventory)).toMatchObject({
-      resumeStep: 4,
+      resumeStep: 5,
       unapproved: ['video', 'extraction', 'theme', 'preview'],
     });
   });
@@ -278,7 +291,8 @@ describe('status inventory resolution', () => {
     expect(resolveResume(inventory)).toMatchObject({
       resumeStep: 2,
       unapproved: [
-        'storyboard', 'stills-preview', 'video', 'extraction', 'theme', 'preview',
+        'storyboard', 'motion-plan', 'stills-preview', 'video',
+        'extraction', 'theme', 'preview',
       ],
     });
   });
@@ -290,7 +304,7 @@ describe('status inventory resolution', () => {
     inventory.receipts.video.basedOn = inventory.manifests.brief;
 
     expect(resolveResume(inventory)).toMatchObject({
-      resumeStep: 8,
+      resumeStep: 9,
       unapproved: [],
     });
   });
@@ -306,7 +320,7 @@ describe('status inventory resolution', () => {
     expect(resolveResume(completeInventory({
       stale: ['video', 'extraction', 'site'],
     }))).toMatchObject({
-      resumeStep: 4,
+      resumeStep: 5,
       staleness: ['video', 'extraction', 'site'],
     });
   });
@@ -501,6 +515,28 @@ describe('filesystem inventory and approvals', () => {
     await expect(approveGate(projectDir, 'storyboard')).rejects.toThrow(/last.*incomplete/i);
   });
 
+  it('marks motion-plan as needs re-review after its artifact changes', async () => {
+    const projectDir = await createV2Project();
+    await approveGate(projectDir, 'brief');
+    await approveGate(projectDir, 'storyboard');
+    await approveGate(projectDir, 'motion-plan');
+    await writeMotionPlan(projectDir, 8);
+
+    const io = fakeIo();
+    expect(await main([projectDir], io)).toBe(0);
+    const output = io.log.mock.calls.flat().join('\n');
+    expect(output).toContain('3. motion-plan: needs re-review');
+    expect(output).toContain('Resume at step 3.');
+  });
+
+  it('rejects video approval until motion-plan is currently approved', async () => {
+    const projectDir = await createV2Project();
+    await approveGate(projectDir, 'brief');
+    await approveGate(projectDir, 'storyboard');
+
+    await expect(approveGate(projectDir, 'video')).rejects.toThrow(/motion-plan/i);
+  });
+
   it('resumes at keyframes until video.txt makes an empty plan explicitly skipped', async () => {
     const projectDir = await temporaryProject();
     await mkdir(join(projectDir, 'prompts'), { recursive: true });
@@ -509,7 +545,7 @@ describe('filesystem inventory and approvals', () => {
 
     expect(resolveResume(await buildInventory(projectDir)).resumeStep).toBe(2);
     await writeFile(join(projectDir, 'prompts', 'video.txt'), 'text-only video prompt');
-    expect(resolveResume(await buildInventory(projectDir)).resumeStep).toBe(3);
+    expect(resolveResume(await buildInventory(projectDir)).resumeStep).toBe(4);
   });
 
   it('writes an atomic linked approval chain and preserves unrelated receipts', async () => {
@@ -527,14 +563,16 @@ describe('filesystem inventory and approvals', () => {
     });
     const storyboardReceipt = await approveGate(projectDir, 'storyboard');
     expect(storyboardReceipt.basedOn).toBe(briefReceipt.manifestHash);
+    const motionPlanReceipt = await approveGate(projectDir, 'motion-plan');
+    expect(motionPlanReceipt.basedOn).toBe(storyboardReceipt.manifestHash);
     const videoReceipt = await approveGate(projectDir, 'video');
-    expect(videoReceipt.basedOn).toBe(storyboardReceipt.manifestHash);
+    expect(videoReceipt.basedOn).toBe(motionPlanReceipt.manifestHash);
     await approveGate(projectDir, 'extraction');
     await approveGate(projectDir, 'theme');
     await approveGate(projectDir, 'preview');
 
     expect(resolveResume(await buildInventory(projectDir))).toMatchObject({
-      resumeStep: 8,
+      resumeStep: 9,
       unapproved: [],
     });
     const approvals = JSON.parse(
@@ -549,7 +587,7 @@ describe('filesystem inventory and approvals', () => {
     const changed = resolveResume(await buildInventory(projectDir));
     expect(changed.resumeStep).toBe(1);
     expect(changed.unapproved).toEqual([
-      'brief', 'storyboard', 'video', 'extraction', 'theme', 'preview',
+      'brief', 'storyboard', 'motion-plan', 'video', 'extraction', 'theme', 'preview',
     ]);
 
     await approveGate(projectDir, 'brief');
@@ -557,10 +595,11 @@ describe('filesystem inventory and approvals', () => {
       await readFile(join(projectDir, 'approvals.json'), 'utf8'),
     );
     expect(Object.keys(preserved).sort()).toEqual([
-      'brief', 'external', 'extraction', 'preview', 'storyboard', 'theme', 'video',
+      'brief', 'external', 'extraction', 'motion-plan',
+      'preview', 'storyboard', 'theme', 'video',
     ]);
     expect(resolveResume(await buildInventory(projectDir)).unapproved).toEqual([
-      'storyboard', 'video', 'extraction', 'theme', 'preview',
+      'storyboard', 'motion-plan', 'video', 'extraction', 'theme', 'preview',
     ]);
   });
 
@@ -636,8 +675,8 @@ describe('status CLI', () => {
 
     expect(await main([projectDir], io)).toBe(0);
     const output = io.log.mock.calls.flat().join('\n');
-    expect(output).toContain('5. extraction: stale');
-    expect(output).not.toContain('5. extraction: ready-unapproved');
+    expect(output).toContain('6. extraction: stale');
+    expect(output).not.toContain('6. extraction: ready-unapproved');
   });
 
   it('prints stale before needs re-review when the receipt chain is invalid', async () => {
@@ -652,8 +691,8 @@ describe('status CLI', () => {
 
     expect(await main([projectDir], io)).toBe(0);
     const output = io.log.mock.calls.flat().join('\n');
-    expect(output).toContain('5. extraction: stale');
-    expect(output).not.toContain('5. extraction: needs re-review');
+    expect(output).toContain('6. extraction: stale');
+    expect(output).not.toContain('6. extraction: needs re-review');
   });
 
   it('prints missing artifacts as incomplete even when their chain is invalid', async () => {
@@ -714,6 +753,7 @@ async function createV2Project({ videoEnabled = true, media = false } = {}) {
   await writeFile(join(projectDir, 'prompts', 'keyframe-beat-1.txt'), 'Beat one\n');
   await writeFile(join(projectDir, 'input', 'keyframes', 'beat-1.png'), 'beat image');
   await writeFile(join(projectDir, 'prompts', 'video.txt'), 'Video prompt\n');
+  if (videoEnabled) await writeMotionPlan(projectDir);
   if (videoEnabled) await writeFile(join(projectDir, 'input', 'video.mp4'), 'video');
   await writeFile(join(projectDir, 'frames', 'frame-0001.webp'), 'frame');
   await writeFile(join(projectDir, 'site', 'frames', 'frame-0001.webp'), 'frame');
@@ -741,17 +781,17 @@ async function createV2Project({ videoEnabled = true, media = false } = {}) {
 }
 
 describe('v2 status gates', () => {
-  it('uses the seven v2 gates in order', () => {
+  it('uses the eight v2 gates in order', () => {
     expect(GATES).toEqual([
-      'brief', 'storyboard', 'stills-preview', 'video',
-      'extraction', 'theme', 'preview',
+      'brief', 'storyboard', 'motion-plan', 'stills-preview',
+      'video', 'extraction', 'theme', 'preview',
     ]);
   });
 
-  it('maps a legacy keyframes receipt to storyboard and skips only stills-preview', async () => {
+  it('maps a legacy keyframes receipt to storyboard and preserves downstream skip behavior', async () => {
     const projectDir = await createCompleteProject();
     const gateManifests = {};
-    for (const gate of ['brief', 'storyboard', 'video', 'extraction', 'theme']) {
+    for (const gate of ['brief', 'storyboard', 'motion-plan', 'video', 'extraction', 'theme']) {
       const entries = await buildGateManifest(projectDir, gate);
       gateManifests[gate] = manifestHash(gate === 'storyboard'
         ? entries.filter((entry) => entry.path !== 'values.json#storyboard')
@@ -759,7 +799,7 @@ describe('v2 status gates', () => {
     }
     let basedOn = null;
     const receipts = {};
-    for (const gate of ['brief', 'storyboard', 'video', 'extraction', 'theme']) {
+    for (const gate of ['brief', 'storyboard', 'motion-plan', 'video', 'extraction', 'theme']) {
       const key = gate === 'storyboard' ? 'keyframes' : gate;
       receipts[key] = { manifestHash: gateManifests[gate], basedOn };
       basedOn = gateManifests[gate];
@@ -770,12 +810,13 @@ describe('v2 status gates', () => {
     const report = resolveResume(inventory);
     expect(inventory.receipts.storyboard).toEqual(receipts.keyframes);
     expect(report.unapproved).not.toEqual(expect.arrayContaining([
-      'brief', 'storyboard', 'stills-preview', 'video', 'extraction', 'theme',
+      'brief', 'storyboard', 'motion-plan', 'stills-preview',
+      'video', 'extraction', 'theme',
     ]));
     expect(report.unapproved).toEqual(['preview']);
     const io = fakeIo();
     await main([projectDir], io);
-    expect(io.log.mock.calls.flat().join('\n')).toContain('3. stills-preview: skipped');
+    expect(io.log.mock.calls.flat().join('\n')).toContain('4. stills-preview: skipped');
   });
 
   it('builds video-mode extraction from project media and never skips extraction', async () => {
@@ -833,7 +874,7 @@ describe('v2 status gates', () => {
     const projectDir = await createV2Project();
     for (const gate of GATES) await approveGate(projectDir, gate);
     expect(resolveResume(await buildInventory(projectDir))).toMatchObject({
-      resumeStep: 8,
+      resumeStep: 9,
       unapproved: [],
     });
   });
@@ -971,15 +1012,19 @@ describe('v2 status gates', () => {
     expect((await buildInventory(projectDir)).stale).toContain('site');
   });
 
-  it('skips disabled video but still requires and approves frame extraction', async () => {
+  it('skips disabled motion-plan and video but still requires frame extraction', async () => {
     const projectDir = await createV2Project({ videoEnabled: false });
     const inventory = await buildInventory(projectDir);
     expect(inventory.manifests.extraction).not.toBeNull();
-    for (const gate of GATES.filter((gate) => gate !== 'video')) {
+    const io = fakeIo();
+    await main([projectDir], io);
+    expect(io.log.mock.calls.flat().join('\n')).toContain('3. motion-plan: skipped');
+    expect(io.log.mock.calls.flat().join('\n')).toContain('5. video: skipped');
+    for (const gate of GATES.filter((gate) => !['motion-plan', 'video'].includes(gate))) {
       await approveGate(projectDir, gate);
     }
     const report = resolveResume(await buildInventory(projectDir));
     expect(report.unapproved).toEqual([]);
-    expect(report.resumeStep).toBe(8);
+    expect(report.resumeStep).toBe(9);
   });
 });

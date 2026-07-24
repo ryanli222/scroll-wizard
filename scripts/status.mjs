@@ -15,6 +15,7 @@ import {
 export const GATES = [
   'brief',
   'storyboard',
+  'motion-plan',
   'stills-preview',
   'video',
   'extraction',
@@ -244,6 +245,18 @@ export async function buildGateManifest(projectDir, gate, inspect = lstat) {
     return sortManifestEntries(entries);
   }
 
+  if (gate === 'motion-plan') {
+    const storyboardEntries = await buildGateManifest(projectDir, 'storyboard', inspect);
+    if (!storyboardEntries) return null;
+    const entry = await manifestFile(
+      join(projectDir, 'prompts', 'motion-plan.json'),
+      'prompts/motion-plan.json',
+      inspect,
+    );
+    if (!entry) return null;
+    return sortManifestEntries([...storyboardEntries, entry]);
+  }
+
   if (gate === 'video') {
     const entry = await manifestFile(
       join(projectDir, 'input', 'video.mp4'),
@@ -468,11 +481,12 @@ export async function buildInventory(projectDir, inspect = lstat) {
 function stepFor(item) {
   if (item === 'brief') return 1;
   if (item.startsWith('keyframe') || item.startsWith('storyboard')) return 2;
-  if (item === 'stills-preview') return 3;
-  if (item === 'video') return 4;
-  if (item === 'extraction') return 5;
-  if (item === 'site' || item === 'theme') return 6;
-  if (item === 'preview') return 7;
+  if (item === 'motion-plan') return 3;
+  if (item === 'stills-preview') return 4;
+  if (item === 'video') return 5;
+  if (item === 'extraction') return 6;
+  if (item === 'site' || item === 'theme') return 7;
+  if (item === 'preview') return 8;
   return 1;
 }
 
@@ -517,7 +531,7 @@ export function resolveResume(inventory) {
     ...inventory.stale.map(stepFor),
   ];
   return finish(
-    actionableSteps.length ? Math.min(...actionableSteps) : 8,
+    actionableSteps.length ? Math.min(...actionableSteps) : GATES.length + 1,
     inventory,
     unapproved,
   );
@@ -526,6 +540,9 @@ export function resolveResume(inventory) {
 function gateSkipped(gate, inventory) {
   if (gate === 'storyboard') {
     return inventory.keyframePromptCount === 0 && inventory.videoPromptExists;
+  }
+  if (gate === 'motion-plan') {
+    return !inventory.videoEnabled || gateSkipped('storyboard', inventory);
   }
   if (gate === 'stills-preview') {
     return inventory.beatPromptCount === 0 && inventory.videoFileExists;

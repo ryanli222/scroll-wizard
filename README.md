@@ -136,8 +136,9 @@ overwritten on the next scaffold.
 
 ### Inspect or approve resume state
 
-Reports which approval gate (brief, keyframes, video, extraction, theme,
-preview) the project should resume at, and can record an approval receipt.
+Reports which approval gate (`brief`, `storyboard`, `motion-plan`,
+`stills-preview`, `video`, `extraction`, `theme`, `preview`) the project
+should resume at, and can record an approval receipt.
 
 ```bash
 scroll-wizard-status <projectDir> [--json]
@@ -146,12 +147,41 @@ node scripts/status.mjs <projectDir> [--json]
 node scripts/status.mjs <projectDir> --approve <gate>
 ```
 
+### Plan motion clips
+
+Builds the deterministic beat-aware clip plan for video mode without calling a
+provider. It reads the approved beat prompts and `values.json`, then writes
+`prompts/motion-plan.json`.
+
+```bash
+node scripts/motion-plan.mjs create <projectDir> --max-clip-seconds 6
+```
+
+The artifact contains `maxClipDurationSeconds`, `totalDurationSeconds`,
+`clips`, and `continuity`. Each clip stays within the requested per-clip
+maximum, and each continuity boundary records the required
+`last-frame-to-first-frame` handoff for stitching.
+
+### Stitch generated clips
+
+Validates that `input/clips/clip-01.mp4`, `clip-02.mp4`, and so on exactly
+match the approved motion plan, concatenates them with ffmpeg's concat
+demuxer, validates the stitched result, and atomically replaces
+`input/video.mp4`.
+
+```bash
+node scripts/stitch-video.mjs <projectDir>
+```
+
 ## Generated project
 
 A scaffolded project directory contains `site/` (the deployable static
 site — `index.html`, `style.css`, `scrub-engine.js`, `scrub-core.js`,
 `lenis.js`, `config.json`, and `frames/`), plus the source material
-(`brief.md`, `values.json`, `prompts/`, `input/`) used to build it.
+(`brief.md`, `values.json`, `prompts/`, `input/`) used to build it. In video
+mode, `prompts/` also carries `motion-plan.json`, while `input/` can hold
+source clips under `input/clips/` before they are stitched into the canonical
+`input/video.mp4`.
 
 ## Preview
 

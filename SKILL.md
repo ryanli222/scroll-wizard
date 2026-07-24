@@ -49,6 +49,7 @@ as valid.
 |---|---|---|---|
 | Brief | Hard | brief.md and intake values | brief |
 | Storyboard | Light | active beat prompts, beat stills, and Pencil-reviewed overlays in values.json | storyboard |
+| Motion plan | Hard | prompts/motion-plan.json plus the approved storyboard manifest | motion-plan |
 | Stills preview | Light | stable beat-frame preview + reviewed overlays (legacy-only skip when a v1 video has no beat prompts) | stills-preview |
 | Video watched | Hard | prompts/video.txt and input/video.mp4 | video |
 | Extraction review | Light | frames + holds/posterIndex (frames mode) or media/ re-encode report (video mode) | extraction |
@@ -144,7 +145,16 @@ This choice never navigates to another URL. It only determines which sections fo
   user. Persist approved copy, `position`, normalized `at` ranges, and `hold` flags in
   `values.json` before asking for the `storyboard` gate go-ahead.
 
-## Step 3: Stills preview (no video-generation cost)
+## Step 3: Motion plan (no video-generation cost)
+
+- In video mode, ask only for the provider's maximum per-clip seconds (`maxClipDurationSeconds`, finite `2` through `15`).
+- Run `node <skill-root>/scripts/motion-plan.mjs create <project> --max-clip-seconds N`.
+- Show the derived clip and cost plan: total duration, clip count, each clip's beat span/duration, and the continuity handoff.
+- Give one recommendation on whether the plan looks balanced or whether a different maximum would reduce clip count.
+- End the turn for explicit `motion-plan` approval before any video-generation call.
+- On the next user approval, record it with `node <skill-root>/scripts/status.mjs <project> --approve motion-plan`.
+
+## Step 4: Stills preview (no video-generation cost)
 
 - Run `stills-to-frames.mjs`, scaffold the frames-mode site, and review the accepted
   stills with live overlays. Still acquisition obeys the ledger; this conversion adds
@@ -153,7 +163,7 @@ This choice never navigates to another URL. It only determines which sections fo
   stable beat-frame preview and reviewed overlays, then ask for the `stills-preview`
   gate go-ahead.
 
-## Step 4: Video and budget menu
+## Step 5: Video and budget menu
 
 - Preflight the current session and persist route JSON containing only verified
   capabilities, availability, and current prices. Never infer provider availability
@@ -171,6 +181,9 @@ This choice never navigates to another URL. It only determines which sections fo
   only when they are callable now. Run `plan-generation.mjs routes` against the
   persisted preflight JSON, inside the ledger's remaining hard budget, and show ranked
   eligible routes plus every excluded reason. Never rank providers informally.
+- Before any video-generation call, ask only for the provider's maximum per-clip seconds,
+  create `prompts/motion-plan.json`, show the derived clip and cost plan, recommend a
+  plan, and end the turn for explicit `motion-plan` approval.
 - After route selection, write `prompts/video.txt` with one continuous slow shot, no
   cuts/text/watermark, and only references supported by that route. Unsupported middle
   beats guide prompt/timing but are not claimed as frame-locked.
@@ -185,11 +198,15 @@ This choice never navigates to another URL. It only determines which sections fo
   which visible weakness that purchase is likely to improve; explicitly say quality is
   not guaranteed and never raise the cap automatically. Offer the current stills site,
   a cheaper verified route, unused-budget reallocation, or an explicit exact cap raise.
+- For multi-clip generation, persist each approved clip as `input/clips/clip-01.mp4`,
+  `clip-02.mp4`, and so on, then run `node <skill-root>/scripts/stitch-video.mjs <project>`
+  to validate the exact clip set and stitch the final `input/video.mp4` before the
+  user watches it for the `video` gate.
 - For No video, persist `generation.video: false`; only the video gate skips. Otherwise
   canonicalize the chosen mp4/mov as `input/video.mp4`, validate it, require the user to
   watch it, and ask for the `video` gate go-ahead.
 
-## Step 5: Derive playback
+## Step 6: Derive playback
 
 - After video approval, default to balanced blob-video playback:
   `node <skill-root>/scripts/reencode-video.mjs <project>/input/video.mp4 <project>/media --gop 8 --crf 23 --width 1600`.
@@ -203,7 +220,7 @@ This choice never navigates to another URL. It only determines which sections fo
   mid-4G load time. Persist holds/posterIndex for frames mode or the `media/` re-encode
   report for video mode before asking for the `extraction` gate go-ahead.
 
-## Step 6: Art-direct and scaffold
+## Step 7: Art-direct and scaffold
 
 - View 2-3 actual beat frames, or the video poster plus representative approved beats,
   before proposing any theme.
@@ -215,7 +232,7 @@ This choice never navigates to another URL. It only determines which sections fo
 - After approval, run `scaffold-site.mjs`, passing `--force` only when replacing an
   existing `site/` directory.
 
-## Step 7: Preview and revise
+## Step 8: Preview and revise
 
 - Serve the site through a static server (fetching `config.json` does not work
   reliably from a `file://` URL).
@@ -232,7 +249,7 @@ This choice never navigates to another URL. It only determines which sections fo
 - Ask for the preview go-ahead only after the user has actually checked the browser
   preview, never before.
 
-## Step 8: Deploy instructions
+## Step 9: Deploy instructions
 
 - Provide paste-ready Vercel, Netlify, and GitHub Pages instructions for the `site/`
   directory.
@@ -284,9 +301,11 @@ credits or cost directly, so cost is simply not mentioned as a skill-side concer
 node <skill-root>/scripts/status.mjs <project> --json
 node <skill-root>/scripts/validate-media.mjs <file> --json
 node <skill-root>/scripts/plan-generation.mjs beats --claims 4 --sections 5
+node <skill-root>/scripts/motion-plan.mjs create <project> --max-clip-seconds 6
 node <skill-root>/scripts/plan-generation.mjs routes <routes.json> --budget-micros N --preset balanced --duration 8 --resolution 720p
 node <skill-root>/scripts/budget.mjs <project> status
 node <skill-root>/scripts/stills-to-frames.mjs <project> --width 1600 --quality 80
+node <skill-root>/scripts/stitch-video.mjs <project>
 node <skill-root>/scripts/reencode-video.mjs <project>/input/video.mp4 <project>/media --crf 23 --width 1600
 node <skill-root>/scripts/extract-frames.mjs <video> <project>/frames --count N --width W --format webp --quality Q
 node <skill-root>/scripts/scaffold-site.mjs <project> --config <project>/values.json [--force]
