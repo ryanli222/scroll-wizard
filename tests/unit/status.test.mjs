@@ -987,7 +987,7 @@ describe('v2 status gates', () => {
     expect(inventory.incomplete).toContain('storyboard:beat-2');
   });
 
-  it('uses resume step 9 after every required v2 gate is approved', async () => {
+  it('reports the fully approved v2 chain as complete (resume step 10)', async () => {
     const projectDir = await createV2Project();
     for (const gate of GATES.filter((gate) => gate !== 'inspiration')) {
       await approveGate(projectDir, gate);
