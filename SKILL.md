@@ -89,6 +89,12 @@ legacy skip; never infer the exception from files or project history.
   (fly-through/route) register.
 - Ask brand, vibe, motion, stopped scenes ("holds"), and CTA. Also collect claim count,
   section count, whether the story has a process, and catalog-item count.
+- When the catalog-item count is nonzero and the user actually wants a catalog
+  section, collect each item's name, a dropped-in image (and an optional
+  hover-swap alternate), and an optional CTA, then persist them to
+  `values.json#catalog` along with whether to render the grid, the carousel,
+  or both. Catalog images are user-provided only — there is no paid
+  generation route for them.
 - Run `plan-generation.mjs beats` with those density inputs. Explain the resulting
   3-to-10 beat recommendation, let the user override it, and persist the confirmed
   count in `values.json`; the user, not the heuristic, has final control.
