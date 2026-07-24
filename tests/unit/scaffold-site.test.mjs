@@ -253,6 +253,16 @@ describe('assembleConfig direction presets', () => {
     expect(config.direction).toBeUndefined();
     expect(config.directionPreset).toBeUndefined();
   });
+
+  it('does not inherit a demo default direction the values file never asked for', () => {
+    // The shipped template/config.json carries direction:"technical"; a legacy
+    // values file with no direction must not inherit it via `...defaults`, or the
+    // runtime hard-fails on a direction with no serialized preset.
+    const demoDefaults = { ...defaults, direction: 'technical' };
+    const { config } = assembleConfig(demoDefaults, { brand: { name: 'D' } }, frameSet, null);
+    expect(config.direction).toBeUndefined();
+    expect(config.directionPreset).toBeUndefined();
+  });
 });
 
 describe('assembleConfig video mode', () => {

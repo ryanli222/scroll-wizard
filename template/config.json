@@ -32,7 +32,12 @@
                },
     "scrub":  {
                   "heightVh":  400,
-                  "smoothing":  0.12
+                  "smoothing":  0.12,
+                  "jump":  {
+                               "minMs":  500,
+                               "maxMs":  1400,
+                               "pxPerMs":  2.2
+                           }
               },
     "overlays":  [
                      {
@@ -94,7 +99,8 @@
                          "eyebrow":  "Aster / 01",
                          "headline":  "Light, held in motion",
                          "sub":  "A sculptural object explored at your pace.",
-                         "scrollHint":  "Scroll to explore"
+                         "scrollHint":  "Scroll to explore",
+                         "navLabel":  "Top"
                      },
                      {
                          "type":  "scrub-hero"
@@ -123,7 +129,8 @@
                                           "value":  "18 h",
                                           "beat":  1
                                       }
-                                  ]
+                                  ],
+                         "navLabel":  "Specs"
                      },
                      {
                          "type":  "gallery",
@@ -134,7 +141,8 @@
                                            "alt":  "Aster lamp opening view",
                                            "beat":  0
                                        }
-                                   ]
+                                   ],
+                         "navLabel":  "Gallery"
                      },
                      {
                          "type":  "cta",
@@ -145,7 +153,32 @@
                                      "href":  "#buy"
                                  },
                          "emailCapture":  true,
-                         "background":  "frames/frame-0001.webp"
+                         "background":  "frames/frame-0001.webp",
+                         "navLabel":  "Buy"
                      }
-                 ]
+                 ],
+    "hotspots":  [
+                     {
+                         "point":  [
+                                       0.72,
+                                       0.38
+                                   ],
+                         "target":  2,
+                         "label":  "Light source"
+                     }
+                 ],
+    "config":  {
+                   "options":  [
+                                   {
+                                       "id":  "studio",
+                                       "label":  "Studio",
+                                       "tint":  "#1a1d22"
+                                   },
+                                   {
+                                       "id":  "noir",
+                                       "label":  "Noir",
+                                       "tint":  "#050505"
+                                   }
+                               ]
+               }
 }

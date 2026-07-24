@@ -111,6 +111,13 @@ export function assembleConfig(defaults, values, frameSet, mediaSet = null) {
     scrub: { ...defaults.scrub, ...creative.scrub },
   };
   if (!Object.hasOwn(creative, 'sections')) delete config.sections;
+  if (!Object.hasOwn(creative, 'hotspots')) delete config.hotspots;
+  if (!Object.hasOwn(creative, 'config')) delete config.config;
+  if (creative.scrub?.jump === undefined) delete config.scrub.jump;
+  // The demo template/config.json ships a `direction`; without this a legacy
+  // values file (no direction) would inherit it via `...defaults` but get no
+  // serialized preset, hard-failing the runtime and skewing section synthesis.
+  if (!Object.hasOwn(creative, 'direction')) delete config.direction;
   if (selectedDirection) {
     config.directionPreset = {
       motion: { ...selectedDirection.motion },
