@@ -1,11 +1,45 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  archetypeGuidance,
   estimateRouteCost,
   filterProviderRoutes,
   rankProviderRoutes,
   recommendBeatCount,
 } from '../../scripts/lib/generation.mjs';
+
+describe('archetypeGuidance', () => {
+  it('gives the product/teardown default section mix', () => {
+    expect(archetypeGuidance({ register: 'product' })).toEqual({
+      sections: ['masthead', 'scrub-hero', 'spec', 'gallery', 'cta'],
+      note: expect.stringMatching(/hero product/i),
+    });
+    expect(archetypeGuidance({ register: 'full3d', archetype: 'teardown' }).sections)
+      .toEqual(['masthead', 'scrub-hero', 'spec', 'gallery', 'cta']);
+  });
+
+  it('gives the full3d flythrough/walkthrough default section mix', () => {
+    const expected = ['masthead', 'scrub-hero', 'statement', 'feature-split', 'cta'];
+    expect(archetypeGuidance({ register: 'full3d', archetype: 'flythrough' }).sections)
+      .toEqual(expected);
+    expect(archetypeGuidance({ register: 'full3d', archetype: 'walkthrough' }).sections)
+      .toEqual(expected);
+  });
+
+  it('carries an archetype-specific motion cue', () => {
+    expect(archetypeGuidance({ register: 'full3d', archetype: 'teardown' }).note)
+      .toMatch(/exploded|separate/i);
+    expect(archetypeGuidance({ register: 'full3d', archetype: 'flythrough' }).note)
+      .toMatch(/travels|through/i);
+  });
+
+  it('rejects an unknown register or a full3d call without a valid archetype', () => {
+    expect(() => archetypeGuidance({ register: 'nope' })).toThrow(/register/i);
+    expect(() => archetypeGuidance({ register: 'full3d' })).toThrow(/archetype/i);
+    expect(() => archetypeGuidance({ register: 'full3d', archetype: 'bogus' }))
+      .toThrow(/archetype/i);
+  });
+});
 
 describe('recommendBeatCount', () => {
   it('maps simple, normal, dense, and catalog use cases into 3..10 beats', () => {

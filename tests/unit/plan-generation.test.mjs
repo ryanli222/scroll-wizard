@@ -109,6 +109,22 @@ describe('plan-generation main', () => {
     expect(io.error).not.toHaveBeenCalled();
   });
 
+  it('prints archetype guidance as JSON', async () => {
+    const io = fakeIo();
+    expect(await main(['guidance', '--register', 'full3d', '--archetype', 'teardown'], io))
+      .toBe(0);
+    expect(JSON.parse(io.log.mock.calls[0][0])).toEqual({
+      sections: ['masthead', 'scrub-hero', 'spec', 'gallery', 'cta'],
+      note: expect.any(String),
+    });
+  });
+
+  it('rejects guidance with a bad register', async () => {
+    const io = fakeIo();
+    expect(await main(['guidance', '--register', 'nope'], io)).toBe(1);
+    expect(io.error).toHaveBeenCalled();
+  });
+
   it('reads runtime routes, filters capabilities and budget, and ranks eligible routes', async () => {
     const root = await temporaryRoot();
     const routesFile = join(root, 'routes.json');

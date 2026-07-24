@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 
 import { isDirect, valueAfter } from './lib/cli.mjs';
 import {
+  archetypeGuidance,
   filterProviderRoutes,
   rankProviderRoutes,
   recommendBeatCount,
@@ -13,6 +14,7 @@ import {
 const USAGE = [
   'Usage:',
   '  plan-generation beats --claims N --sections N [--process] [--catalog N]',
+  '  plan-generation guidance --register full3d|product [--archetype ARCH]',
   '  plan-generation routes <routes.json> --budget-micros N '
     + '--preset free|cheapest|balanced|quality-first --duration N '
     + '--resolution VALUE [--first-last] [--references N]',
@@ -77,6 +79,21 @@ export async function main(
         sectionCount: integerFlag(argv, '--sections'),
       });
       io.log(JSON.stringify({ beatCount }, null, 2));
+      return 0;
+    }
+
+    if (command === 'guidance') {
+      validateOptions(
+        argv,
+        1,
+        new Set(['--register', '--archetype']),
+        new Set(),
+      );
+      const guidance = archetypeGuidance({
+        register: valueAfter(argv, '--register'),
+        archetype: argv.includes('--archetype') ? valueAfter(argv, '--archetype') : undefined,
+      });
+      io.log(JSON.stringify(guidance, null, 2));
       return 0;
     }
 

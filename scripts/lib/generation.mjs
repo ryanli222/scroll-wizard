@@ -96,3 +96,31 @@ export function rankProviderRoutes(routes, preset) {
     score(right) - score(left)
     || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
 }
+
+const ARCHETYPE_NOTES = {
+  flythrough: 'Camera travels continuously through an environment; hold on arrival beats.',
+  walkthrough: 'Camera moves through a space at human pace; pause at threshold beats.',
+  teardown: 'A product separates into annotated exploded parts; hold on each callout.',
+};
+
+export function archetypeGuidance({ register, archetype } = {}) {
+  if (register !== 'full3d' && register !== 'product') {
+    throw new Error('register must be "full3d" or "product".');
+  }
+  if (register === 'full3d') {
+    if (!archetype || !Object.hasOwn(ARCHETYPE_NOTES, archetype)) {
+      throw new Error('archetype must be flythrough, walkthrough, or teardown for full3d.');
+    }
+  }
+  const productMix = ['masthead', 'scrub-hero', 'spec', 'gallery', 'cta'];
+  const journeyMix = ['masthead', 'scrub-hero', 'statement', 'feature-split', 'cta'];
+  if (register === 'product' || archetype === 'teardown') {
+    return {
+      sections: [...productMix],
+      note: register === 'product'
+        ? 'One hero product shown/revealed (orbit, dolly, reveal) on clean ground.'
+        : ARCHETYPE_NOTES.teardown,
+    };
+  }
+  return { sections: [...journeyMix], note: ARCHETYPE_NOTES[archetype] };
+}
