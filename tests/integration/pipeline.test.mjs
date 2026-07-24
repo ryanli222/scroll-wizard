@@ -177,7 +177,7 @@ describe.skipIf(!hasFfmpeg)('ffmpeg pipeline', () => {
     const done = JSON.parse((await run(process.execPath, [
       repo('scripts/status.mjs'), projectDir, '--json',
     ], projectDir)).stdout);
-    expect(done).toMatchObject({ resumeStep: 8, unapproved: [] });
+    expect(done).toMatchObject({ resumeStep: 9, unapproved: [] });
 
     // Staleness and wholesale format replacement: touching the source video
     // must flag extraction as stale, and re-extracting/re-scaffolding with
