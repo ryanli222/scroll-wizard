@@ -124,9 +124,16 @@ delete videoConfig.frames;
 const catalogConfig = {
   ...videoConfig,
   catalog: {
+    // 6 items so the carousel track (flex: 0 0 min(70vw, 320px) per item + 16px
+    // gap) genuinely overflows its content box at the default 1280px viewport:
+    // 6 * 320 + 5 * 16 = 2000px vs. ~1075px content box (1280 - 2 * 8vw padding).
     items: [
       { name: 'Original', image: 'catalog/original.webp', hoverImage: 'catalog/original-alt.webp' },
       { name: 'Oolong', image: 'catalog/oolong.webp' },
+      { name: 'Jasmine', image: 'catalog/jasmine.webp' },
+      { name: 'Sencha', image: 'catalog/sencha.webp' },
+      { name: 'Genmaicha', image: 'catalog/genmaicha.webp' },
+      { name: 'Hojicha', image: 'catalog/hojicha.webp' },
     ],
     grid: true,
     carousel: true,
@@ -233,13 +240,16 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  const catalogImageMatch = /^\/catalog\/catalog\/(original|original-alt|oolong)\.webp$/.exec(pathname);
+  const catalogImageMatch = /^\/catalog\/catalog\/(original|original-alt|oolong|jasmine|sencha|genmaicha|hojicha)\.webp$/.exec(pathname);
   if (catalogImageMatch) {
     // Same convention as the /frames/frame-*.webp route below: a .webp-named
     // URL served as a tiny synthesized PNG, since content is sniffed from
     // bytes, not the URL extension.
     res.writeHead(200, { 'Content-Type': 'image/png' });
-    const shade = { original: 200, 'original-alt': 80, oolong: 140 }[catalogImageMatch[1]];
+    const shade = {
+      original: 200, 'original-alt': 80, oolong: 140,
+      jasmine: 170, sencha: 100, genmaicha: 60, hojicha: 210,
+    }[catalogImageMatch[1]];
     res.end(makePng(shade, 120, 60));
     return;
   }

@@ -587,7 +587,7 @@ test('catalog grid renders cards and swaps to the hover image', async ({ page })
   await page.goto('/catalog/');
   await expect(page.locator('#catalog-grid')).toBeVisible();
   const cards = page.locator('.catalog-card');
-  await expect(cards).toHaveCount(2);
+  await expect(cards).toHaveCount(6);
   const firstCard = cards.first();
   const altImage = firstCard.locator('.catalog-card__image--alt');
   await expect(altImage).toHaveCSS('opacity', '0');
