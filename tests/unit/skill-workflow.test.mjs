@@ -85,3 +85,47 @@ describe('visual ending treatment', () => {
     expect(prose).toMatch(/never navigates to another URL/i);
   });
 });
+
+describe('.pen-per-pause storyboard', () => {
+  it('accepts Pencil-reviewed pauses when available or user-approved numeric overlays when skipped', () => {
+    expect(prose).toMatch(/when Pencil is available, Pencil-reviewed pause compositions/i);
+    expect(prose).toMatch(/otherwise, user-approved numeric overlay compositions in values\.json/i);
+  });
+  it('scaffolds one .pen file per hold beat, not one per beat', () => {
+    expect(prose).toMatch(/one `?\.pen`? file per pause/i);
+    expect(prose).toMatch(/`?hold: true`?, not one per beat/i);
+    expect(prose).not.toMatch(/one canvas per beat/i);
+  });
+  it('seeds each pause .pen with the beat still and direction-styled nodes', () => {
+    expect(prose).toMatch(/input\/keyframes\/beat-<n>\.<ext>/i);
+    expect(prose).toMatch(/editable nodes/i);
+    expect(prose).toMatch(/title, body, stats, CTA/i);
+    expect(prose).toMatch(/point.*leader.*annotation/i);
+    expect(prose).toMatch(/pre-style/i);
+    expect(prose).toMatch(/references\/directions\.json/);
+    expect(prose).toMatch(/fonts\.display/);
+    expect(prose).toMatch(/fonts\.body/);
+    expect(prose).toMatch(/accent/);
+    expect(prose).toMatch(/bg.*surface.*scrimStrength/i);
+    expect(prose).toMatch(/radius/);
+  });
+  it('keeps non-pause beats in numeric values.json overlay editing', () => {
+    expect(prose).toMatch(/Non-pause beats keep numeric `?values\.json`? overlay editing/i);
+  });
+  it('reviews adjustable pause compositions and reads them back into values.json', () => {
+    expect(prose).toMatch(/get_screenshot/i);
+    expect(prose).toMatch(/adjusted even after.*approved inspiration reference/i);
+    expect(prose).toMatch(/read the approved node positions/i);
+    expect(prose).toMatch(/normalized `?at`?/i);
+    expect(prose).toMatch(/position`?\/`?anchor/i);
+    expect(prose).toMatch(/point.*annotations/i);
+    expect(prose).toMatch(/copy, and `?hold`?/i);
+    expect(prose).toMatch(/into `?values\.json`? before asking for the `?storyboard`? gate/i);
+  });
+  it('lets the user skip unavailable Pencil review and never claims a .pen round-trip', () => {
+    expect(prose).toMatch(/Pencil.*unavailable/i);
+    expect(prose).toMatch(/user.*choose.*skip Pencil review/i);
+    expect(prose).toMatch(/numeric `?values\.json`? overlay editing/i);
+    expect(prose).toMatch(/never claim a `?\.pen`? round-trip occurred/i);
+  });
+});

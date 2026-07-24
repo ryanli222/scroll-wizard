@@ -49,7 +49,7 @@ no beat prompts. Do not recreate or re-approve a receipt that status reports as 
 |---|---|---|---|
 | Brief | Hard | brief.md and intake values | brief |
 | Inspiration | Light | register/archetype/direction chosen, approved reference URLs and bucket in values.json.inspiration | inspiration |
-| Storyboard | Light | active beat prompts, beat stills, and Pencil-reviewed overlays in values.json | storyboard |
+| Storyboard | Light | active beat prompts, beat stills, and, when Pencil is available, Pencil-reviewed pause compositions (one .pen per hold beat) read back into values.json; otherwise, user-approved numeric overlay compositions in values.json | storyboard |
 | Motion plan | Hard | prompts/motion-plan.json plus the approved storyboard manifest | motion-plan |
 | Stills preview | Light | stable beat-frame preview + reviewed overlays (legacy-only skip when a v1 video has no beat prompts) | stills-preview |
 | Video watched | Hard | prompts/video.txt and input/video.mp4 | video |
@@ -178,12 +178,22 @@ This choice never navigates to another URL. It only determines which sections fo
   image when more than one candidate plausibly fits â€” checking for an existing
   `prompts/keyframe-beat-<n>.txt` description is not the same as confirming which file
   fills that role.
-- Probe Pencil once with `get_editor_state`. If unavailable, say so and fall back to
-  numeric `values.json` overlay editing; never claim Pencil review occurred.
-- When Pencil is available, create one canvas per beat with the still as background
-  and title/body/stats/CTA as editable nodes. Iterate through screenshots with the
-  user. Persist approved copy, `position`, normalized `at` ranges, and `hold` flags in
-  `values.json` before asking for the `storyboard` gate go-ahead.
+- Probe Pencil once with `get_editor_state`. If unavailable, tell the user and let them
+  choose to skip Pencil review and continue with numeric `values.json` overlay editing;
+  never claim a `.pen` round-trip occurred.
+- When Pencil is available, scaffold one `.pen` file per pause — one for each beat with
+  `hold: true`, not one per beat — seeded with that beat's still
+  (`input/keyframes/beat-<n>.<ext>`) as the background and its overlay content
+  (title, body, stats, CTA, and the `point` leader for an `annotation` variant) as
+  editable nodes. Pre-style every node to the chosen `direction`, read from
+  `references/directions.json`: title in `fonts.display`, body in `fonts.body`, the CTA
+  and any active marker in `accent`, ground and scrim from `bg`/`surface`/`scrimStrength`,
+  corner radius from `radius`. Non-pause beats keep numeric `values.json` overlay editing.
+- Iterate through `get_screenshot` with the user on each pause `.pen`; the composition may
+  be adjusted even after it followed the approved inspiration reference. Read the approved
+  node positions and copy back, and persist normalized `at`, `position`/`anchor`, `point`
+  (for annotations), copy, and `hold` into `values.json` before asking for the
+  `storyboard` gate go-ahead.
 
 ## Step 3: Motion plan (no video-generation cost)
 
