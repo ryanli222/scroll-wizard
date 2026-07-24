@@ -96,7 +96,13 @@ async function seedFreshMedia(projectDir, media) {
   await seedMedia(join(projectDir, 'media'), media);
 }
 
-async function seedLiveSite(projectDir, { marker, frames, media } = {}) {
+async function seedFreshCatalog(projectDir, names) {
+  const catalogDir = join(projectDir, 'catalog');
+  await mkdir(catalogDir, { recursive: true });
+  await Promise.all(names.map((name) => writeFile(join(catalogDir, name), 'image')));
+}
+
+async function seedLiveSite(projectDir, { marker, frames, media, catalog } = {}) {
   const sitePath = join(projectDir, 'site');
   await mkdir(sitePath, { recursive: true });
   if (marker !== undefined) {
@@ -109,6 +115,11 @@ async function seedLiveSite(projectDir, { marker, frames, media } = {}) {
   }
   if (media) {
     await seedMedia(join(sitePath, 'media'), media);
+  }
+  if (catalog) {
+    const catalogDir = join(sitePath, 'catalog');
+    await mkdir(catalogDir, { recursive: true });
+    await Promise.all(catalog.map((name) => writeFile(join(catalogDir, name), 'image')));
   }
 }
 
@@ -672,6 +683,88 @@ describe('scaffoldProject', () => {
 
     expect(result.framesSource).toBe('fresh');
     expect((await readdir(projectDir)).some((name) => name.startsWith('site.tmp-'))).toBe(false);
+  });
+
+  it('stages fresh catalog images into the site and removes them from the project', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedFreshFrames(projectDir, ['frame-0001.webp']);
+    await seedFreshCatalog(projectDir, ['original.webp', 'oolong.webp']);
+    await writeValues(projectDir, {
+      ...creativeValues,
+      catalog: {
+        items: [
+          { name: 'Original', image: 'catalog/original.webp' },
+          { name: 'Oolong', image: 'catalog/oolong.webp' },
+        ],
+        grid: true,
+      },
+    });
+
+    const result = await scaffoldProject({
+      projectDir,
+      valuesPath: join(projectDir, 'values.json'),
+      templateDir,
+    });
+
+    expect(result.catalogSet).toBe(true);
+    expect((await readdir(join(projectDir, 'site', 'catalog'))).sort())
+      .toEqual(['oolong.webp', 'original.webp']);
+    expect(await readdir(projectDir)).not.toContain('catalog');
+    const config = JSON.parse(await readFile(join(projectDir, 'site', 'config.json'), 'utf8'));
+    expect(config.catalog.items).toHaveLength(2);
+  });
+
+  it('copies inherited catalog images for a theme-only rebuild', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedLiveSite(projectDir, { frames: ['frame-0001.webp'], catalog: ['original.webp'] });
+    await writeValues(projectDir, {
+      ...creativeValues,
+      catalog: { items: [{ name: 'Original', image: 'catalog/original.webp' }], grid: true },
+    });
+
+    const result = await scaffoldProject({
+      projectDir,
+      valuesPath: join(projectDir, 'values.json'),
+      templateDir,
+      force: true,
+    });
+
+    expect(result.catalogSet).toBe(true);
+    await expect(readdir(join(projectDir, 'site', 'catalog'))).resolves.toEqual(['original.webp']);
+  });
+
+  it('rejects a catalog config with no available catalog images', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedFreshFrames(projectDir, ['frame-0001.webp']);
+    await writeValues(projectDir, {
+      ...creativeValues,
+      catalog: { items: [{ name: 'Original', image: 'catalog/original.webp' }], grid: true },
+    });
+
+    await expect(scaffoldProject({
+      projectDir,
+      valuesPath: join(projectDir, 'values.json'),
+      templateDir,
+    })).rejects.toThrow(/No catalog images available/);
+  });
+
+  it('does not touch catalog assets when values has no catalog field', async () => {
+    const projectDir = await makeProjectDir();
+    const templateDir = await makeTemplateDir();
+    await seedFreshFrames(projectDir, ['frame-0001.webp']);
+    await writeValidValues(projectDir);
+
+    const result = await scaffoldProject({
+      projectDir,
+      valuesPath: join(projectDir, 'values.json'),
+      templateDir,
+    });
+
+    expect(result.catalogSet).toBeUndefined();
+    await expect(readdir(join(projectDir, 'site'))).resolves.not.toContain('catalog');
   });
 });
 
