@@ -14,6 +14,7 @@ import {
 
 export const GATES = [
   'brief',
+  'inspiration',
   'storyboard',
   'motion-plan',
   'stills-preview',
@@ -44,6 +45,15 @@ export function valuesProjection(values, gate) {
     };
   }
   if (gate === 'theme') return values.theme ?? null;
+  if (gate === 'inspiration') {
+    return {
+      register: values.register ?? null,
+      archetype: values.archetype ?? null,
+      direction: values.direction ?? null,
+      bucket: values.inspiration?.bucket ?? null,
+      approvedRefs: [...(values.inspiration?.approvedRefs ?? [])],
+    };
+  }
   throw new Error('No values projection for gate: ' + gate);
 }
 
@@ -216,6 +226,17 @@ export async function buildGateManifest(projectDir, gate, inspect = lstat) {
       inspect,
     );
     return entry ? [entry] : null;
+  }
+
+  if (gate === 'inspiration') {
+    const values = await readJsonObject(join(projectDir, 'values.json'), 'values.json');
+    if (!values) return null;
+    const refs = values.inspiration?.approvedRefs;
+    if (!Array.isArray(refs) || refs.length === 0) return null;
+    return [{
+      path: 'values.json#inspiration',
+      sha256: sha256Text(canonicalJson(valuesProjection(values, 'inspiration'))),
+    }];
   }
 
   if (gate === 'storyboard') {
@@ -472,21 +493,19 @@ export async function buildInventory(projectDir, inspect = lstat) {
     videoPromptExists,
     videoFileExists,
     videoEnabled: values?.generation?.video !== false,
+    directed: Boolean(values?.register || values?.direction),
     scrubMode,
     mtimes,
   };
 }
 
 function stepFor(item) {
-  if (item === 'brief') return 1;
-  if (item.startsWith('keyframe') || item.startsWith('storyboard')) return 2;
-  if (item === 'motion-plan') return 3;
-  if (item === 'stills-preview') return 4;
-  if (item === 'video') return 5;
-  if (item === 'extraction') return 6;
-  if (item === 'site' || item === 'theme') return 7;
-  if (item === 'preview') return 8;
-  return 1;
+  if (item.startsWith('keyframe') || item.startsWith('storyboard')) {
+    return GATES.indexOf('storyboard') + 1;
+  }
+  if (item === 'site') return GATES.indexOf('theme') + 1;
+  const index = GATES.indexOf(item);
+  return index === -1 ? 1 : index + 1;
 }
 
 function finish(resumeStep, inventory, unapproved) {
@@ -537,6 +556,7 @@ export function resolveResume(inventory) {
 }
 
 function gateSkipped(gate, inventory) {
+  if (gate === 'inspiration') return !inventory.directed;
   if (gate === 'storyboard') {
     return inventory.keyframePromptCount === 0 && inventory.videoPromptExists;
   }
