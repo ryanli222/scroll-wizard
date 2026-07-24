@@ -246,15 +246,14 @@ export async function buildGateManifest(projectDir, gate, inspect = lstat) {
   }
 
   if (gate === 'motion-plan') {
-    const storyboardEntries = await buildGateManifest(projectDir, 'storyboard', inspect);
-    if (!storyboardEntries) return null;
     const entry = await manifestFile(
       join(projectDir, 'prompts', 'motion-plan.json'),
       'prompts/motion-plan.json',
       inspect,
     );
     if (!entry) return null;
-    return sortManifestEntries([...storyboardEntries, entry]);
+    const storyboardEntries = await buildGateManifest(projectDir, 'storyboard', inspect);
+    return sortManifestEntries(storyboardEntries ? [...storyboardEntries, entry] : [entry]);
   }
 
   if (gate === 'video') {
@@ -542,7 +541,7 @@ function gateSkipped(gate, inventory) {
     return inventory.keyframePromptCount === 0 && inventory.videoPromptExists;
   }
   if (gate === 'motion-plan') {
-    return !inventory.videoEnabled || gateSkipped('storyboard', inventory);
+    return !inventory.videoEnabled;
   }
   if (gate === 'stills-preview') {
     return inventory.beatPromptCount === 0 && inventory.videoFileExists;

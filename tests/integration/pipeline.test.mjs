@@ -52,14 +52,20 @@ describe.skipIf(!hasFfmpeg)('ffmpeg pipeline', () => {
     const projectDir = await mkdtemp(join(tmpdir(), 'scroll-wizard-pipeline-'));
     temporaryRoots.push(projectDir);
 
-    // Step 1 (plan): initialize the project and persist the brief and the
-    // chosen visual reference. A generated-video project has no keyframes,
-    // so the video itself is the visual reference; a video prompt makes the
-    // keyframes gate self-skip.
+    // Step 1 (plan): initialize the project and persist the brief, motion
+    // plan, and chosen visual reference. A generated-video project has no
+    // keyframes, so storyboard is absent by design while motion-plan remains
+    // a required video-mode gate.
     await mkdir(join(projectDir, 'input'), { recursive: true });
     await mkdir(join(projectDir, 'prompts'), { recursive: true });
     await writeFile(join(projectDir, 'brief.md'), '# Aster\n');
     await writeFile(join(projectDir, 'prompts', 'video.txt'), 'One continuous shot.');
+    await writeFile(join(projectDir, 'prompts', 'motion-plan.json'), JSON.stringify({
+      maxClipDurationSeconds: 6,
+      totalDurationSeconds: 2,
+      clips: [{ index: 1, durationSeconds: 2, beatStart: 1, beatEnd: 1 }],
+      continuity: [],
+    }, null, 2));
 
     const fixture = join(projectDir, 'input', 'video.mp4');
     const generated = await run('ffmpeg', [
@@ -71,9 +77,9 @@ describe.skipIf(!hasFfmpeg)('ffmpeg pipeline', () => {
     ], projectDir);
     expect(generated.code).toBe(0);
 
-    // Step 2 (plan): obtain explicit approval for the brief and the
-    // selected video before touching extraction.
-    for (const gate of ['brief', 'video']) {
+    // Step 2 (plan): obtain explicit approval for the brief, motion plan,
+    // and selected video before touching extraction.
+    for (const gate of ['brief', 'motion-plan', 'video']) {
       const approved = await run(process.execPath, [
         repo('scripts/status.mjs'), projectDir, '--approve', gate,
       ], projectDir);

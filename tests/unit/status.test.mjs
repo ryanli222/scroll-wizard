@@ -297,11 +297,25 @@ describe('status inventory resolution', () => {
     });
   });
 
-  it('links video directly to brief when keyframes are skipped', () => {
+  it('requires motion-plan when storyboard is skipped in video mode', () => {
     const inventory = completeInventory({ keyframePromptCount: 0, beatPromptCount: 0 });
     inventory.manifests.storyboard = null;
     delete inventory.receipts.storyboard;
-    inventory.receipts.video.basedOn = inventory.manifests.brief;
+    inventory.manifests['motion-plan'] = null;
+    delete inventory.receipts['motion-plan'];
+
+    expect(resolveResume(inventory)).toMatchObject({
+      resumeStep: 3,
+      unapproved: ['motion-plan', 'video', 'extraction', 'theme', 'preview'],
+    });
+  });
+
+  it('links video through motion-plan when keyframes are skipped', () => {
+    const inventory = completeInventory({ keyframePromptCount: 0, beatPromptCount: 0 });
+    inventory.manifests.storyboard = null;
+    delete inventory.receipts.storyboard;
+    inventory.receipts['motion-plan'].basedOn = inventory.manifests.brief;
+    inventory.receipts.video.basedOn = inventory.manifests['motion-plan'];
 
     expect(resolveResume(inventory)).toMatchObject({
       resumeStep: 9,
@@ -545,7 +559,7 @@ describe('filesystem inventory and approvals', () => {
 
     expect(resolveResume(await buildInventory(projectDir)).resumeStep).toBe(2);
     await writeFile(join(projectDir, 'prompts', 'video.txt'), 'text-only video prompt');
-    expect(resolveResume(await buildInventory(projectDir)).resumeStep).toBe(4);
+    expect(resolveResume(await buildInventory(projectDir)).resumeStep).toBe(3);
   });
 
   it('writes an atomic linked approval chain and preserves unrelated receipts', async () => {
@@ -618,6 +632,7 @@ describe('filesystem inventory and approvals', () => {
     const projectDir = await createCompleteProject({ keyframes: false });
     await rename(join(projectDir, 'site', 'frames'), join(projectDir, 'frames'));
     await approveGate(projectDir, 'brief');
+    await approveGate(projectDir, 'motion-plan');
     await approveGate(projectDir, 'video');
     const extractionReceipt = await approveGate(projectDir, 'extraction');
 
@@ -780,6 +795,22 @@ async function createV2Project({ videoEnabled = true, media = false } = {}) {
   return projectDir;
 }
 
+async function createLegacyVideoProject() {
+  const projectDir = await temporaryProject('scroll-wizard-status-legacy-');
+  await mkdir(join(projectDir, 'prompts'), { recursive: true });
+  await mkdir(join(projectDir, 'input'), { recursive: true });
+  await writeFile(join(projectDir, 'brief.md'), '# Legacy brief\n');
+  await writeFile(join(projectDir, 'prompts', 'video.txt'), 'Legacy video prompt\n');
+  await writeMotionPlan(projectDir);
+  await writeFile(join(projectDir, 'input', 'video.mp4'), 'video');
+  await writeJson(join(projectDir, 'values.json'), {
+    generation: { video: true },
+    overlays: [],
+    theme: { bg: '#000000', text: '#ffffff' },
+  });
+  return projectDir;
+}
+
 describe('v2 status gates', () => {
   it('uses the eight v2 gates in order', () => {
     expect(GATES).toEqual([
@@ -817,6 +848,20 @@ describe('v2 status gates', () => {
     const io = fakeIo();
     await main([projectDir], io);
     expect(io.log.mock.calls.flat().join('\n')).toContain('4. stills-preview: skipped');
+  });
+
+  it('builds a motion-plan manifest from only motion-plan.json when storyboard is skipped', async () => {
+    const projectDir = await createLegacyVideoProject();
+
+    const manifest = await buildGateManifest(projectDir, 'motion-plan');
+    expect(manifest.map((entry) => entry.path)).toEqual(['prompts/motion-plan.json']);
+  });
+
+  it('rejects legacy video approval without a current motion-plan receipt', async () => {
+    const projectDir = await createLegacyVideoProject();
+    await approveGate(projectDir, 'brief');
+
+    await expect(approveGate(projectDir, 'video')).rejects.toThrow(/motion-plan/i);
   });
 
   it('builds video-mode extraction from project media and never skips extraction', async () => {
