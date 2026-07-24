@@ -42,6 +42,41 @@ describe('v2 workflow documentation contracts', () => {
   });
 });
 
+describe('mode, direction, and inspiration intake', () => {
+  it('opens intake with the register mode gate and full3d archetype sub-menu', () => {
+    expect(prose).toMatch(/register.*(full3d|product)/i);
+    expect(prose).toMatch(/archetype.*only when.*full3d/i);
+    expect(prose).toMatch(/flythrough.*walkthrough.*teardown/i);
+  });
+
+  it('requires a direction choice from the four directions', () => {
+    expect(prose).toMatch(/direction/i);
+    expect(prose).toMatch(/minimal.*cinematic.*technical.*bold/i);
+  });
+
+  it('runs a light inspiration gate that shows clickable references before any paid generation', () => {
+    expect(prose).toMatch(/inspiration/i);
+    expect(prose).toMatch(/references\/inspiration\.json/);
+    expect(prose).toMatch(/clickable|click through/i);
+    expect(prose).toMatch(/before any paid|before any video-generation/i);
+    expect(prose).toMatch(/status\.mjs.*--approve inspiration/);
+  });
+
+  it('frames references as a design language, not a promise the site will look identical', () => {
+    expect(prose).toMatch(/not a template|design language/i);
+    expect(prose).toMatch(/not look identical|will not look identical/i);
+  });
+
+  it('persists the approved references and bucket to values.json', () => {
+    expect(prose).toMatch(/inspiration.*bucket/i);
+    expect(prose).toMatch(/approvedRefs/);
+  });
+
+  it('legacy-skips inspiration for a config without register or direction', () => {
+    expect(prose).toMatch(/legacy.*(register|direction).*skip|skip.*inspiration.*legacy/i);
+  });
+});
+
 describe('visual ending treatment', () => {
   it('asks whether the page ends on-frame or continues to a solid text section', () => {
     expect(prose).toMatch(/How should the page finish visually/i);

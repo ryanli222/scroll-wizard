@@ -39,15 +39,16 @@ description: Use when a user wants a scroll-scrub video website, scrollytelling 
 6. Never approve a gate on the user's behalf, no matter how confident the state looks.
 
 Trust the report's backward-compatible state: a valid v1 `keyframes` receipt maps to
-`storyboard`, and `stills-preview` is skipped only for a legacy project that has a v1
-video but no beat prompts. Do not recreate or re-approve a receipt that status reports
-as valid.
+`storyboard`. `inspiration` is skipped only for a legacy project that has neither `register`
+nor `direction`; `stills-preview` is skipped only for a legacy project that has a v1 video but
+no beat prompts. Do not recreate or re-approve a receipt that status reports as skipped.
 
 ## Gates
 
 | Gate | Kind | Persist before asking | Approve name |
 |---|---|---|---|
 | Brief | Hard | brief.md and intake values | brief |
+| Inspiration | Light | register/archetype/direction chosen, approved reference URLs and bucket in values.json.inspiration | inspiration |
 | Storyboard | Light | active beat prompts, beat stills, and Pencil-reviewed overlays in values.json | storyboard |
 | Motion plan | Hard | prompts/motion-plan.json plus the approved storyboard manifest | motion-plan |
 | Stills preview | Light | stable beat-frame preview + reviewed overlays (legacy-only skip when a v1 video has no beat prompts) | stills-preview |
@@ -86,8 +87,21 @@ legacy skip; never infer the exception from files or project history.
 
 ## Step 1: Intake
 
-- Establish whether this is a product-scrub (one hero subject) or a journey
-  (fly-through/route) register.
+- Open with the **register** mode gate, persisted to `values.json.register`:
+  - `full3d` — an immersive fake-3D world produced by video generation. Choosing it
+    reveals a required **archetype** sub-question (`values.json.archetype`), shown **only
+    when** `register` is `full3d`: `flythrough` (camera travels through an environment),
+    `walkthrough` (camera moves through a space at human pace), or `teardown` (a product
+    separates into annotated parts).
+  - `product` — one hero product shown/revealed (orbit, dolly, reveal). No archetype
+    sub-question; proceed straight to direction.
+- Ask for the **direction** (`values.json.direction`), one of `minimal`, `cinematic`,
+  `technical`, or `bold`. A direction is a whole token + layout + motion + chrome package,
+  not a recolor; an explicit `theme` in `values.json` still overrides its preset. Confirm
+  the pick is not the product category's obvious default move (category-reflex test).
+- Run `node <skill-root>/scripts/plan-generation.mjs guidance --register <register>
+  [--archetype <archetype>]` and seed `values.json.sections` from the returned default
+  section mix, letting the user edit it.
 - Ask brand, vibe, motion, stopped scenes ("holds"), and CTA. Also collect claim count,
   section count, whether the story has a process, and catalog-item count.
 - Run `plan-generation.mjs beats` with those density inputs. Explain the resulting
@@ -112,6 +126,32 @@ legacy skip; never infer the exception from files or project history.
 - Write `brief.md` and the creative portions of `values.json` (brand, theme seed,
   generation choice, confirmed beat count, scrub, overlays skeleton) before asking for
   the brief gate go-ahead.
+
+## Step 1.5: Inspiration gate (light, before any paid generation)
+
+- This light gate front-loads look-agreement so a paid video generation is never spent on
+  the wrong vibe. Run it after mode/archetype/direction are chosen and before storyboard.
+- Look up the matching references in `references/inspiration.json` by the project's bucket
+  (`full3d/<archetype>` or `product`, plus `direction/<direction>`). Print the matching
+  entries as **clickable URLs** in the session with their one-line notes, and ask the user
+  to click through the real sites and approve the look. Never auto-approve.
+- **Set the expectation explicitly.** State that these references are the **motion and
+  design language** we borrow from — a mood/motion anchor, not a template. The generated
+  site uses the user's own brand, copy, and generated footage, rendered in the `<direction>`
+  design system; it will not look identical to any reference, and no reference's
+  composition, copy, palette, or type is copied (spec §2.4, §3). Approving here approves a
+  design language, not a promise of visual identity.
+- Only `verified` `video-scroll` references are shown; a register/archetype whose motion
+  idea is already clear (e.g. teardown, product orbit) needs no reference and is described
+  in prose to the generator instead.
+- On approval, persist `values.json.inspiration = { "bucket": "<bucket>", "approvedRefs":
+  ["<url>"] }`. Only persist `https://` URLs drawn from `references/inspiration.json`; never
+  print or persist a non-https or user-pasted-unvetted link as a clickable reference. Then
+  record the receipt with
+  `node <skill-root>/scripts/status.mjs <project> --approve inspiration`.
+- **Legacy skip:** a config without `register` or `direction` is a legacy v2 project; its
+  inspiration gate is legacy-skipped by `status.mjs` (reported as `skipped`) and is never
+  approved on the user's behalf. Only honor this skip when `status.mjs` reports it.
 
 ## Step 2: Storyboard
 
