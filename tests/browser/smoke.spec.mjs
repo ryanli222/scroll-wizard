@@ -577,6 +577,42 @@ test('phone viewport keeps tall landscape overlay content reachable', async ({ b
   }
 });
 
+test('catalog grid is absent until scrub.catalog.grid is enabled', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#catalog-grid')).toBeHidden();
+});
+
+test('catalog grid renders cards and swaps to the hover image', async ({ page }) => {
+  await requireVideoFixture(page.request);
+  await page.goto('/catalog/');
+  await expect(page.locator('#catalog-grid')).toBeVisible();
+  const cards = page.locator('.catalog-card');
+  await expect(cards).toHaveCount(6);
+  const firstCard = cards.first();
+  const altImage = firstCard.locator('.catalog-card__image--alt');
+  await expect(altImage).toHaveCSS('opacity', '0');
+  await firstCard.hover();
+  await expect(altImage).toHaveCSS('opacity', '1');
+});
+
+test('catalog carousel scrolls via next/prev controls', async ({ page }) => {
+  await requireVideoFixture(page.request);
+  await page.goto('/catalog/');
+  await expect(page.locator('#catalog-carousel')).toBeVisible();
+  const track = page.locator('.catalog-carousel__track');
+  const before = await track.evaluate((el) => el.scrollLeft);
+  await page.click('.catalog-carousel__next');
+  await expect.poll(() => track.evaluate((el) => el.scrollLeft)).toBeGreaterThan(before);
+  const afterNext = await track.evaluate((el) => el.scrollLeft);
+  await page.click('.catalog-carousel__prev');
+  await expect.poll(() => track.evaluate((el) => el.scrollLeft)).toBeLessThan(afterNext);
+});
+
+test('catalog carousel is absent until scrub.catalog.carousel is enabled', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#catalog-carousel')).toBeHidden();
+});
+
 test('phone viewport keeps tall portrait overlay content reachable', async ({ browser, request }) => {
   await requireVideoFixture(request);
   const context = await browser.newContext({

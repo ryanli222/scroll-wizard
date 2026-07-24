@@ -263,6 +263,10 @@ function safePosterPath(value) {
   return safeAssetPath(value, 'media/') && /\.(webp|jpe?g|png)$/i.test(value);
 }
 
+function safeCatalogPath(value) {
+  return safeAssetPath(value, 'catalog/') && /\.(webp|jpe?g|png)$/i.test(value);
+}
+
 const issue = (code, path, message) => ({ code, path, message });
 
 export function validateConfig(config) {
@@ -400,6 +404,40 @@ export function validateConfig(config) {
   if (holdTotal >= 1) addError('holds.total', 'overlays', 'Holds cannot cover the whole scrub.');
 
   if (config.outro?.cta) validateCta(config.outro.cta, 'outro.cta', addError);
+
+  if (config.catalog !== undefined) {
+    if (!config.catalog || typeof config.catalog !== 'object' || Array.isArray(config.catalog)) {
+      addError('catalog.type', 'catalog', 'Catalog must be an object.');
+    } else {
+      const items = config.catalog.items;
+      if (!Array.isArray(items) || items.length < 1 || items.length > 12) {
+        addError('catalog.items', 'catalog.items', 'Catalog needs 1 to 12 items.');
+      } else {
+        items.forEach((item, index) => {
+          const path = 'catalog.items[' + index + ']';
+          if (!item || typeof item.name !== 'string' || !item.name.trim()) {
+            addError('catalog.item.name', path + '.name', 'Each catalog item needs a non-empty name.');
+          }
+          if (!item || !safeCatalogPath(item.image)) {
+            addError('catalog.item.image', path + '.image',
+              'Each catalog item needs a valid image path under catalog/.');
+          }
+          if (item?.hoverImage !== undefined && !safeCatalogPath(item.hoverImage)) {
+            addError('catalog.item.hoverImage', path + '.hoverImage',
+              'hoverImage must be a valid path under catalog/.');
+          }
+          if (item?.cta) validateCta(item.cta, path + '.cta', addError);
+        });
+      }
+      if (config.catalog.grid !== undefined && typeof config.catalog.grid !== 'boolean') {
+        addError('catalog.grid', 'catalog.grid', 'catalog.grid must be a boolean.');
+      }
+      if (config.catalog.carousel !== undefined && typeof config.catalog.carousel !== 'boolean') {
+        addError('catalog.carousel', 'catalog.carousel', 'catalog.carousel must be a boolean.');
+      }
+    }
+  }
+
   return { errors, warnings };
 }
 

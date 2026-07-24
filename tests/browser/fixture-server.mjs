@@ -121,6 +121,25 @@ const videoConfig = {
 };
 delete videoConfig.frames;
 
+const catalogConfig = {
+  ...videoConfig,
+  catalog: {
+    // 6 items so the carousel track (flex: 0 0 min(70vw, 320px) per item + 16px
+    // gap) genuinely overflows its content box at the default 1280px viewport:
+    // 6 * 320 + 5 * 16 = 2000px vs. ~1075px content box (1280 - 2 * 8vw padding).
+    items: [
+      { name: 'Original', image: 'catalog/original.webp', hoverImage: 'catalog/original-alt.webp' },
+      { name: 'Oolong', image: 'catalog/oolong.webp' },
+      { name: 'Jasmine', image: 'catalog/jasmine.webp' },
+      { name: 'Sencha', image: 'catalog/sencha.webp' },
+      { name: 'Genmaicha', image: 'catalog/genmaicha.webp' },
+      { name: 'Hojicha', image: 'catalog/hojicha.webp' },
+    ],
+    grid: true,
+    carousel: true,
+  },
+};
+
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -131,12 +150,18 @@ const contentTypes = {
   '.webp': 'image/webp',
 };
 
+const FIXTURE_PREFIXES = ['/video', '/catalog'];
+
+function stripFixturePrefix(pathname) {
+  for (const prefix of FIXTURE_PREFIXES) {
+    if (pathname === prefix || pathname === prefix + '/') return '/index.html';
+    if (pathname.startsWith(prefix + '/')) return pathname.slice(prefix.length);
+  }
+  return pathname;
+}
+
 async function serveStatic(res, pathname) {
-  const sitePath = pathname === '/video' || pathname === '/video/'
-    ? '/index.html'
-    : pathname.startsWith('/video/')
-      ? pathname.slice('/video'.length)
-      : pathname;
+  const sitePath = stripFixturePrefix(pathname);
   const relative = normalize(sitePath === '/' ? '/index.html' : sitePath)
     .replace(/^([/\\]\.\.)+/, '');
   const filePath = join(templateDir, relative);
@@ -165,9 +190,13 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (pathname === '/config.json' || pathname === '/video/config.json') {
+  if (pathname === '/config.json' || pathname === '/video/config.json'
+      || pathname === '/catalog/config.json') {
+    const body = pathname === '/video/config.json' ? videoConfig
+      : pathname === '/catalog/config.json' ? catalogConfig
+      : config;
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify(pathname.startsWith('/video/') ? videoConfig : config));
+    res.end(JSON.stringify(body));
     return;
   }
 
@@ -188,6 +217,40 @@ const server = createServer(async (req, res) => {
     }
     res.writeHead(200, { 'Content-Type': contentTypes['.webp'] });
     res.end(await readFile(videoPosterPath));
+    return;
+  }
+
+  if (pathname === '/catalog/media/video.webm') {
+    if (!videoFixtureStatus.available) {
+      res.writeHead(503).end(videoFixtureStatus.reason);
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': contentTypes['.webm'] });
+    res.end(await readFile(videoPath));
+    return;
+  }
+
+  if (pathname === '/catalog/media/poster.webp') {
+    if (!videoFixtureStatus.available) {
+      res.writeHead(503).end(videoFixtureStatus.reason);
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': contentTypes['.webp'] });
+    res.end(await readFile(videoPosterPath));
+    return;
+  }
+
+  const catalogImageMatch = /^\/catalog\/catalog\/(original|original-alt|oolong|jasmine|sencha|genmaicha|hojicha)\.webp$/.exec(pathname);
+  if (catalogImageMatch) {
+    // Same convention as the /frames/frame-*.webp route below: a .webp-named
+    // URL served as a tiny synthesized PNG, since content is sniffed from
+    // bytes, not the URL extension.
+    res.writeHead(200, { 'Content-Type': 'image/png' });
+    const shade = {
+      original: 200, 'original-alt': 80, oolong: 140,
+      jasmine: 170, sencha: 100, genmaicha: 60, hojicha: 210,
+    }[catalogImageMatch[1]];
+    res.end(makePng(shade, 120, 60));
     return;
   }
 

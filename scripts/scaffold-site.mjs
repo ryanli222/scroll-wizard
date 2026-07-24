@@ -267,6 +267,7 @@ export async function scaffoldProject(options) {
   const sitePath = join(projectDir, 'site');
   const projectFramesPath = join(projectDir, 'frames');
   const projectMediaPath = join(projectDir, 'media');
+  const projectCatalogPath = join(projectDir, 'catalog');
 
   await recoverInterruptedRun(projectDir, io);
 
@@ -346,6 +347,24 @@ export async function scaffoldProject(options) {
       frameSet = await inspectFrameSet(join(siteTmpPath, 'frames'));
     }
 
+    let catalogSet;
+    let freshCatalogConsumed = false;
+    if (values.catalog) {
+      const liveCatalogPath = join(sitePath, 'catalog');
+      const catalogSourcePath = await pathExists(projectCatalogPath)
+        ? projectCatalogPath
+        : await pathExists(liveCatalogPath) ? liveCatalogPath : null;
+      if (!catalogSourcePath) {
+        throw new Error(
+          'No catalog images available: drop images into project/catalog, '
+          + 'or scaffold over an existing site that already has catalog/.',
+        );
+      }
+      await cp(catalogSourcePath, join(siteTmpPath, 'catalog'), { recursive: true });
+      freshCatalogConsumed = catalogSourcePath === projectCatalogPath;
+      catalogSet = true;
+    }
+
     const liveFontsPath = join(sitePath, 'fonts');
     if (await pathExists(liveFontsPath)) {
       await cp(liveFontsPath, join(siteTmpPath, 'fonts'), { recursive: true });
@@ -382,6 +401,7 @@ export async function scaffoldProject(options) {
       await rename(readmeTmpPath, readmePath);
       if (siteExisted) await rm(siteOldPath, { recursive: true, force: true });
       if (freshMediaConsumed) await removeConsumedMedia(projectMediaPath);
+      if (freshCatalogConsumed) await rm(projectCatalogPath, { recursive: true, force: true });
     } catch (postCommitError) {
       // The site itself is already fully validated and swapped in; a failure
       // here only affects the README convenience file or old-site cleanup.
@@ -394,7 +414,7 @@ export async function scaffoldProject(options) {
     }
 
     return {
-      sitePath, frameSet, mediaSet, framesSource, config, warnings, readmePath,
+      sitePath, frameSet, mediaSet, framesSource, config, warnings, readmePath, catalogSet,
     };
   } catch (error) {
     let reportedError = error;
@@ -467,6 +487,7 @@ export async function main(
       io.log('Poster: ' + result.config.frames.poster);
     }
     io.log('README: ' + result.readmePath);
+    if (result.catalogSet) io.log('Catalog: catalog/');
     for (const warning of result.warnings) {
       io.warn('Warning: ' + warning.path + ': ' + warning.message);
     }
