@@ -213,6 +213,13 @@ const sectionsConfig = {
     { type: 'cta', headline: 'Fixture CTA', cta: { label: 'Finish', href: '#finish' }, emailCapture: true, background: 'frames/frame-0001.webp' },
   ],
 };
+const interactiveConfig = {
+  ...sectionsConfig,
+  scrub: { ...sectionsConfig.scrub, jump: { minMs: 400, maxMs: 900, pxPerMs: 2.2 } },
+  hotspots: [{ point: [0.8, 0.35], target: 0, label: 'Fixture hotspot' }],
+  config: { options: [{ id: 'a', label: 'Fixture A', tint: '#102030' }, { id: 'b', label: 'Fixture B', tint: '#301020' }] },
+  sections: sectionsConfig.sections.map((section) => ['masthead', 'spec', 'gallery', 'cta'].includes(section.type) ? { ...section, navLabel: 'Nav ' + section.type } : section),
+};
 const legacyConfig = { ...config };
 
 const videoConfig = {
@@ -226,6 +233,10 @@ const videoConfig = {
 };
 delete videoConfig.frames;
 
+const videoInteractiveConfig = {
+  ...videoConfig,
+  config: { options: [{ id: 'base', label: 'Base' }, { id: 'alt', label: 'Alt', src: 'media/video.webm', poster: 'media/poster.webp' }] },
+};
 const videoVariantsConfig = applyDirection({
   ...videoConfig,
   overlays: variantOverlays,
@@ -282,7 +293,9 @@ const server = createServer(async (req, res) => {
       try {
         const referrer = new URL(req.headers.referer);
         const requestedFixture = referrer.searchParams.get('config') ?? referrer.searchParams.get('fixture');
-        if (requestedFixture === 'sections') {
+        if (requestedFixture === 'interactive') {
+          selectedConfig = isVideo ? videoInteractiveConfig : interactiveConfig;
+        } else if (requestedFixture === 'sections') {
           selectedConfig = sectionsConfig;
         } else if (requestedFixture === 'legacy') {
           selectedConfig = legacyConfig;

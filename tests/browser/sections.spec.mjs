@@ -26,8 +26,8 @@ test('exposes semantic content and data hooks for every explicit section', async
   await expect(page.locator('[data-section]')).toHaveCount(7);
   await expect(page.getByRole('heading', { name: 'Fixture masthead' })).toBeVisible();
   await expect(page.getByAltText('Fixture media')).toBeVisible();
-  await expect(page.locator('[data-section="spec"] [data-beat="1"]')).toContainText('Battery');
-  await expect(page.locator('[data-section="gallery"] [data-beat="1"] img')).toHaveAttribute('alt', 'Fixture gallery image');
+  await expect(page.locator('[data-section="spec"] [data-beat="0"]')).toContainText('Battery');
+  await expect(page.locator('[data-section="gallery"] [data-beat="0"] img')).toHaveAttribute('alt', 'Fixture gallery image');
   await expect(page.locator('#outro .outro__cta')).toHaveAttribute('href', '#finish');
   await expect(page.getByLabel('Email address')).toBeVisible();
 });
