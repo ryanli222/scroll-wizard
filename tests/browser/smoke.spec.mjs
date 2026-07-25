@@ -108,13 +108,28 @@ test('loader hides after the first painted frame while background frames load', 
   });
   await page.goto('/');
 
-  await expect(page.locator('#loader')).toBeHidden();
+  await expect(page.locator('#loader')).toHaveClass(/is-hidden/);
   const state = await page.evaluate(() => ({
     lastFrame: window.__SCROLL_WIZARD_DEBUG__?.lastFrame ?? -1,
     decodedCount: window.__SCROLL_WIZARD_DEBUG__?.decodedCount ?? 0,
   }));
   expect(state.lastFrame).toBeGreaterThanOrEqual(0);
   expect(state.decodedCount).toBeLessThan(30);
+});
+
+test('loader fades out via a class instead of snapping hidden', async ({ page }) => {
+  await page.route('**/frames/frame-*.webp', async (route) => {
+    const isFirstFrame = route.request().url().endsWith('frame-0001.webp');
+    if (!isFirstFrame) await new Promise((resolve) => setTimeout(resolve, 150));
+    await route.continue();
+  });
+  await page.goto('/');
+  await expect(page.locator('#loader')).not.toHaveClass(/is-hidden/);
+  await expect.poll(() => page.evaluate(() =>
+    window.__SCROLL_WIZARD_DEBUG__?.lastFrame ?? -1)).toBeGreaterThanOrEqual(0);
+  await expect(page.locator('#loader')).toHaveClass(/is-hidden/);
+  const opacity = await page.locator('#loader').evaluate((el) => getComputedStyle(el).opacity);
+  expect(Number(opacity)).toBeLessThan(0.5);
 });
 
 test('visibility controls inert and keyboard focus', async ({ page }) => {

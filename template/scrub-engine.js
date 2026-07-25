@@ -507,7 +507,7 @@ function runEngine(config, overlayNodes) {
       lastDrawnIndex = found.index;
       if (!posterHidden) {
         poster.classList.add('is-hidden');
-        loader.hidden = true;
+        loader.classList.add('is-hidden');
         posterHidden = true;
       }
     }
@@ -647,7 +647,7 @@ function runVideoEngine(config, overlayNodes, video) {
     poster.classList.add('is-hidden');
   });
 
-  loader.hidden = true;
+  loader.classList.add('is-hidden');
 
   let smoothProgress = 0;
   let lastTime = performance.now();

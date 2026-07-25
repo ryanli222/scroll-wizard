@@ -277,7 +277,19 @@ a:focus-visible {
   letter-spacing: .04em;
   text-transform: uppercase;
   opacity: .7;
+  transition: opacity 320ms var(--ease), transform 320ms var(--ease);
 }
+.loader.is-hidden {
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+}
+#load-progress {
+  accent-color: var(--accent);
+}
+#load-progress::-webkit-progress-value { transition: width 120ms linear; }
+@keyframes loader-pulse { 50% { opacity: .55; } }
+#load-progress { animation: loader-pulse 1.4s ease-in-out infinite; }
 .fatal-error {
   position: absolute;
   inset: auto 1rem 1rem;
