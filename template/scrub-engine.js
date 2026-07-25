@@ -125,6 +125,10 @@ function applyTheme(config) {
   if (theme.fonts?.body) root.setProperty('--body', theme.fonts.body);
   if (theme.fonts?.mono) root.setProperty('--mono', theme.fonts.mono);
   root.setProperty('--ease', motion.ease ?? LEGACY_DIRECTION_RUNTIME.motion.ease);
+  const bounce = Number(
+    motion.springBounce ?? LEGACY_DIRECTION_RUNTIME.motion.springBounce,
+  ) || 0;
+  root.setProperty('--ease-spring', `cubic-bezier(0.34, ${1 + bounce}, 0.64, 1)`);
   root.setProperty('--spring-bounce', String(
     motion.springBounce ?? LEGACY_DIRECTION_RUNTIME.motion.springBounce,
   ));

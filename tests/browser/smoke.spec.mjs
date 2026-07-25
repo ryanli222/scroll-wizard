@@ -672,3 +672,22 @@ test('video mode reports real load progress instead of hiding instantly', async 
   expect(midProgress).toBeLessThan(1);
   await expect(page.locator('#loader')).toHaveClass(/is-hidden/, { timeout: 5000 });
 });
+
+// The brief's draft navigated via '/video/?fixture=variants&direction=...', but
+// fixture-server.mjs's /video/config.json handler always resolves the
+// 'variants' fixture to the hardcoded 'technical' direction and ignores the
+// `direction` query param for video requests (only the non-video
+// `/config.json` path threads it through `applyDirection`). Adapted to use
+// the non-video '?config=variants&direction=...' navigation that
+// overlay-variants.spec.mjs already relies on for the same reason.
+test('bold direction gets an overshooting spring ease, minimal stays flat', async ({ page }) => {
+  await page.goto('/?config=variants&direction=bold');
+  const boldEase = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue('--ease-spring').trim());
+  expect(boldEase).toMatch(/cubic-bezier\(0\.34, 1\.\d+, 0\.64, 1\)/);
+
+  await page.goto('/?config=variants&direction=minimal');
+  const minimalEase = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue('--ease-spring').trim());
+  expect(minimalEase).toBe('cubic-bezier(0.34, 1, 0.64, 1)');
+});

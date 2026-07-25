@@ -101,7 +101,7 @@ a:focus-visible {
     rotateX(calc((1 - var(--reveal, 1)) * 6deg));
   transform-origin: center;
   transition:
-    transform 320ms var(--ease),
+    transform 320ms var(--ease-spring),
     filter 260ms var(--ease);
 }
 .overlay__content::before {
@@ -435,7 +435,7 @@ h1, h2, h3 { font-family: var(--display); }
 .section-email label { display: grid; gap: .4rem; }
 .section-email input { min-height: 44px; padding: .7rem; border: 1px solid color-mix(in srgb, var(--text) 30%, transparent); border-radius: 6px; background: rgb(from var(--bg) r g b / .7); color: var(--text); }
 @supports (animation-timeline: view()) {
-  .site-section:not([data-section="scrub-hero"]) .section-reveal { animation: section-reveal both linear; animation-timeline: view(); animation-range: entry 10% cover 32%; }
+  .site-section:not([data-section="scrub-hero"]) .section-reveal { animation: section-reveal both var(--ease-spring); animation-timeline: view(); animation-range: entry 10% cover 32%; }
   @keyframes section-reveal { from { opacity: 0; transform: translateY(var(--reveal-travel)); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
 }
 @media (max-width: 700px) { .site-section--feature-split .site-section__inner { grid-template-columns: minmax(0, 1fr); } .site-section--feature-split[data-side="right"] .section-feature__media { order: 0; } }

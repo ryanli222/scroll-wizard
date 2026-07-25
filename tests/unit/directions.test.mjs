@@ -67,9 +67,15 @@ describe('directions.json', () => {
     }
   });
 
-  it('keeps every plain reveal damped with no spring bounce', () => {
-    for (const [name, preset] of Object.entries(presets)) {
-      expect(preset.motion.springBounce, name).toBe(0);
-    }
+  it('keeps minimal and technical reveals damped with no spring bounce', () => {
+    expect(presets.minimal.motion.springBounce).toBe(0);
+    expect(presets.technical.motion.springBounce).toBe(0);
+  });
+
+  it('gives bold and cinematic a nonzero overshoot bounce', () => {
+    expect(presets.bold.motion.springBounce).toBeGreaterThan(0);
+    expect(presets.cinematic.motion.springBounce).toBeGreaterThan(0);
+    expect(presets.cinematic.motion.springBounce)
+      .toBeLessThan(presets.bold.motion.springBounce);
   });
 });
