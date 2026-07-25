@@ -229,7 +229,7 @@ test('frames fixture stays available when ffmpeg is missing', async () => {
 test('video mode scrubs the video with scroll', async ({ page, request }) => {
   await requireVideoFixture(request);
   await page.goto(videoFixtureUrl);
-  await page.waitForSelector('#loader', { state: 'hidden' });
+  await page.waitForFunction(() => document.querySelector('#loader')?.classList.contains('is-hidden'));
   await page.mouse.wheel(0, 4000);
   await page.waitForFunction(() =>
     window.__SCROLL_WIZARD_DEBUG__
@@ -273,7 +273,7 @@ test('video gesture priming is installed before loading and runs only once', asy
   const priming = await page.evaluate(() => window.__PRIME_CALLS__);
   expect(priming.emptyRejects).toBe(0);
   expect(priming.play).toBe(1);
-  await page.waitForSelector('#loader', { state: 'hidden' });
+  await page.waitForFunction(() => document.querySelector('#loader')?.classList.contains('is-hidden'));
   expect(configuredRequests).toEqual(['fetch']);
   expect(priming.sources[0]).toMatch(/^data:video\/mp4;base64,/);
   await expect.poll(() => page.evaluate(() =>
@@ -355,7 +355,7 @@ test('video seek contract coalesces seeks and waits for first seeked paint', asy
     };
   });
   await page.goto(videoFixtureUrl);
-  await page.waitForSelector('#loader', { state: 'hidden' });
+  await page.waitForFunction(() => document.querySelector('#loader')?.classList.contains('is-hidden'));
   await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.55));
   await page.waitForFunction(() => window.__SEEK_LOG__.length > 0);
   await expect(page.locator('#poster')).not.toHaveClass(/is-hidden/);
@@ -425,7 +425,7 @@ test('phone viewport keeps video scrub content usable through a height resize', 
   const page = await context.newPage();
   try {
     await page.goto(videoFixtureUrl);
-    await page.waitForSelector('#loader', { state: 'hidden' });
+    await page.waitForFunction(() => document.querySelector('#loader')?.classList.contains('is-hidden'));
     await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.4));
     await page.waitForFunction(() =>
       window.__SCROLL_WIZARD_DEBUG__
@@ -503,7 +503,7 @@ test('phone viewport supports coarse short landscape with the same video media',
   const page = await context.newPage();
   try {
     await page.goto(videoFixtureUrl);
-    await page.waitForSelector('#loader', { state: 'hidden' });
+    await page.waitForFunction(() => document.querySelector('#loader')?.classList.contains('is-hidden'));
     await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.4));
     await page.waitForFunction(() =>
       window.__SCROLL_WIZARD_DEBUG__?.videoTime > 0.2);
@@ -549,7 +549,7 @@ test('phone viewport keeps tall landscape overlay content reachable', async ({ b
       await route.fulfill({ response, json: config });
     });
     await page.goto(videoFixtureUrl);
-    await page.waitForSelector('#loader', { state: 'hidden' });
+    await page.waitForFunction(() => document.querySelector('#loader')?.classList.contains('is-hidden'));
     await page.evaluate(() => scrollTo(0, document.body.scrollHeight * 0.4));
     const overlay = page.locator('[data-overlay-index="0"]');
     const content = overlay.locator('.overlay__content');
@@ -612,7 +612,7 @@ test('phone viewport keeps tall portrait overlay content reachable', async ({ br
       await route.fulfill({ response, json: config });
     });
     await page.goto(videoFixtureUrl);
-    await page.waitForSelector('#loader', { state: 'hidden' });
+    await page.waitForFunction(() => document.querySelector('#loader')?.classList.contains('is-hidden'));
     await page.evaluate(() => {
       const scrub = document.getElementById('scrub');
       scrollTo(0, scrub.offsetTop + (scrub.offsetHeight - innerHeight) * 0.4);
