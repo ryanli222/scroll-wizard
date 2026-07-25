@@ -691,3 +691,31 @@ test('bold direction gets an overshooting spring ease, minimal stays flat', asyn
     getComputedStyle(document.documentElement).getPropertyValue('--ease-spring').trim());
   expect(minimalEase).toBe('cubic-bezier(0.34, 1, 0.64, 1)');
 });
+
+test('gallery image scales on hover at a fine-pointer viewport', async ({ page }) => {
+  await page.goto('/?fixture=sections');
+  const image = page.locator('.section-gallery__image').first();
+  const before = await image.evaluate((el) => getComputedStyle(el).transform);
+  await image.hover();
+  await expect.poll(() => image.evaluate((el) => getComputedStyle(el).transform))
+    .not.toBe(before);
+});
+
+test('clickable spec row gets a hover treatment, non-clickable rows do not', async ({ page }) => {
+  await page.goto('/?fixture=sections');
+  const clickableRow = page.locator('.section-spec__row[data-beat]').first();
+  const before = await clickableRow.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await clickableRow.hover();
+  await expect.poll(() => clickableRow.evaluate((el) => getComputedStyle(el).backgroundColor))
+    .not.toBe(before);
+});
+
+test('reduced motion disables gallery hover scale', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/?fixture=sections');
+  const image = page.locator('.section-gallery__image').first();
+  const before = await image.evaluate((el) => getComputedStyle(el).transform);
+  await image.hover();
+  const after = await image.evaluate((el) => getComputedStyle(el).transform);
+  expect(after).toBe(before);
+});
