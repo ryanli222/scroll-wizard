@@ -233,6 +233,11 @@ const videoConfig = {
 };
 delete videoConfig.frames;
 
+const videoSlowConfig = {
+  ...videoConfig,
+  video: { ...videoConfig.video, src: 'media/video-slow.webm' },
+};
+
 const videoInteractiveConfig = {
   ...videoConfig,
   config: { options: [{ id: 'base', label: 'Base' }, { id: 'alt', label: 'Alt', src: 'media/video.webm', poster: 'media/poster.webp' }] },
@@ -255,9 +260,13 @@ const contentTypes = {
 async function serveStatic(res, pathname) {
   const sitePath = pathname === '/video' || pathname === '/video/'
     ? '/index.html'
-    : pathname.startsWith('/video/')
-      ? pathname.slice('/video'.length)
-      : pathname;
+    : pathname === '/video-slow' || pathname === '/video-slow/'
+      ? '/index.html'
+      : pathname.startsWith('/video/')
+        ? pathname.slice('/video'.length)
+        : pathname.startsWith('/video-slow/')
+          ? pathname.slice('/video-slow'.length)
+          : pathname;
   const relative = normalize(sitePath === '/' ? '/index.html' : sitePath)
     .replace(/^([/\\]\.\.)+/, '');
   const filePath = join(templateDir, relative);
@@ -283,6 +292,12 @@ const server = createServer(async (req, res) => {
   if (pathname === '/video-fixture-status.json') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(videoFixtureStatus));
+    return;
+  }
+
+  if (pathname === '/video-slow/config.json') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(videoSlowConfig));
     return;
   }
 
@@ -328,13 +343,33 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (pathname === '/video/media/poster.webp') {
+  if (pathname === '/video/media/poster.webp' || pathname === '/video-slow/media/poster.webp') {
     if (!videoFixtureStatus.available) {
       res.writeHead(503).end(videoFixtureStatus.reason);
       return;
     }
     res.writeHead(200, { 'Content-Type': contentTypes['.webp'] });
     res.end(await readFile(videoPosterPath));
+    return;
+  }
+
+  // Deliberately slow, chunked route so a test can observe intermediate
+  // download progress: served under /video-slow/ (mirroring the page's own
+  // prefix) since the fetch for `video.src` resolves relative to the page.
+  if (pathname === '/video-slow/media/video-slow.webm') {
+    if (!videoFixtureStatus.available) {
+      res.writeHead(503).end(videoFixtureStatus.reason);
+      return;
+    }
+    const body = await readFile(videoPath);
+    res.writeHead(200, {
+      'Content-Type': contentTypes['.webm'],
+      'Content-Length': String(body.length),
+    });
+    const half = Math.floor(body.length / 2);
+    res.write(body.subarray(0, half));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    res.end(body.subarray(half));
     return;
   }
 

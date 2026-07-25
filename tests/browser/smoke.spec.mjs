@@ -658,3 +658,17 @@ test('phone viewport keeps tall portrait overlay content reachable', async ({ br
     await context.close();
   }
 });
+
+test('video mode reports real load progress instead of hiding instantly', async ({ page, request }) => {
+  await requireVideoFixture(request);
+  await page.goto('/video-slow/');
+  // Read the live DOM property, not the `value` attribute: setting
+  // `<progress>.value` via JS does not update the reflected HTML
+  // attribute, so getAttribute('value') would always read the static
+  // markup value ("0") regardless of runtime progress.
+  await expect.poll(() => page.locator('#load-progress').evaluate((el) => el.value))
+    .toBeGreaterThan(0);
+  const midProgress = await page.locator('#load-progress').evaluate((el) => el.value);
+  expect(midProgress).toBeLessThan(1);
+  await expect(page.locator('#loader')).toHaveClass(/is-hidden/, { timeout: 5000 });
+});

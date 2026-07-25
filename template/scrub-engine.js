@@ -521,10 +521,26 @@ function runEngine(config, overlayNodes) {
   requestAnimationFrame(tick);
 }
 
-async function loadScrubVideo(config) {
+async function loadScrubVideo(config, onProgress) {
   const response = await fetch(config.video.src);
   if (!response.ok) throw new Error('Video request failed: HTTP ' + response.status);
-  const blob = await response.blob();
+  const total = Number(response.headers.get('content-length'));
+  let blob;
+  if (Number.isFinite(total) && total > 0 && response.body) {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.byteLength;
+      onProgress?.(Math.min(1, received / total));
+    }
+    blob = new Blob(chunks);
+  } else {
+    blob = await response.blob();
+  }
   const objectUrl = URL.createObjectURL(blob);
   let revoked = false;
   const revoke = () => {
@@ -647,8 +663,6 @@ function runVideoEngine(config, overlayNodes, video) {
     poster.classList.add('is-hidden');
   });
 
-  loader.classList.add('is-hidden');
-
   let smoothProgress = 0;
   let lastTime = performance.now();
   function tick(now) {
@@ -729,7 +743,10 @@ async function start() {
   if (selectScrubMode(config) === 'video') {
     let video;
     try {
-      video = await loadScrubVideo(config);
+      video = await loadScrubVideo(config, (fraction) => {
+        loadProgress.value = fraction;
+      });
+      loader.classList.add('is-hidden');
     } catch (error) {
       removeVideoPrime();
       showFatalError(error);
