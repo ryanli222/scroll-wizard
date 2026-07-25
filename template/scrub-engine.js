@@ -537,7 +537,9 @@ async function loadScrubVideo(config, onProgress) {
       received += value.byteLength;
       onProgress?.(Math.min(1, received / total));
     }
-    blob = new Blob(chunks);
+    // Preserve the MIME type response.blob() would carry: a typeless blob:
+    // URL fails <video> playback in stricter engines (Safari/WebKit).
+    blob = new Blob(chunks, { type: response.headers.get('content-type') || undefined });
   } else {
     blob = await response.blob();
   }
