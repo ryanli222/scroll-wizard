@@ -222,7 +222,7 @@ describe('assembleConfig direction presets', () => {
     expect(config.directionPreset).toEqual({
       motion: {
         ease: 'cubic-bezier(0.4, 0, 0.2, 1)',
-        springBounce: 0,
+        springBounce: 0.12,
         revealTravelPx: 12,
       },
       chromeStyle: 'meta-strip',
