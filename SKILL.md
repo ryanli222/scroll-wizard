@@ -15,7 +15,12 @@ description: Use when a user wants a scroll-scrub video website, scrollytelling 
    `node <skill-root>/scripts/status.mjs <project> --approve <gate>`.
 4. Treat a file as an artifact, never as proof of approval. An absent or mismatched
    receipt returns to that gate.
-5. Never hand-edit generated template files. Change `values.json` and re-run scaffold.
+5. Never hand-edit anything in `<project>/site/`; it is generated. Change `values.json` and
+   re-run scaffold. Projects are fully isolated: the first scaffold vendors the shared
+   template into `<project>/template/` and the direction presets into
+   `<project>/directions.json`, and every later scaffold builds from those. Per-project
+   design changes belong there, never in the shared `template/`, which now only seeds
+   projects that have not been scaffolded yet.
 6. In manual mode, print one handoff card and end the turn. Do not poll or wait.
 7. Preserve active prompt names. Move the old prompt into `prompts/history` before
    replacing the active file.
@@ -97,8 +102,24 @@ legacy skip; never infer the exception from files or project history.
     sub-question; proceed straight to direction.
 - Ask for the **direction** (`values.json.direction`), one of `minimal`, `cinematic`,
   `technical`, or `bold`. A direction is a whole token + layout + motion + chrome package,
-  not a recolor; an explicit `theme` in `values.json` still overrides its preset. Confirm
-  the pick is not the product category's obvious default move (category-reflex test).
+  not a recolor. It is a starting point, not a straitjacket: an explicit `theme` overrides
+  its tokens, and an explicit `directionPreset` in `values.json` overrides any individual
+  knob (`scrimStrength`, `chromeStyle`, `motion.*`) while inheriting the rest. Confirm the
+  pick is not the product category's obvious default move (category-reflex test).
+- Ask for the **design control level** (`values.json.designControl`), and ask it here rather
+  than discovering it later as a pile of template collisions:
+  - `tokens` (default) — the design is expressed entirely through `values.json`: theme
+    tokens, `directionPreset` overrides, overlay variants and positions. Nothing outside
+    `values.json` is edited. Right for most projects.
+  - `full` — the user has a specific visual spec that the tokens cannot express (oversized
+    type beyond the stock ramp, bespoke chrome, no-container overlays, custom section
+    styling). The project's own vendored `<project>/template/` and
+    `<project>/directions.json` are edited directly.
+  Ask for `full` whenever the brief arrives as a detailed art-direction spec, or whenever a
+  token-level answer would silently drop part of what the user asked for. State the
+  trade-off in one sentence: `full` can express anything, but the project stops inheriting
+  later shared-template fixes. Never edit the shared `template/` for one project's look —
+  that is what the vendored copy is for.
 - Run `node <skill-root>/scripts/plan-generation.mjs guidance --register <register>
   [--archetype <archetype>]` and seed `values.json.sections` from the returned default
   section mix, letting the user edit it.
@@ -306,6 +327,11 @@ This choice never navigates to another URL. It only determines which sections fo
 - Do not deploy automatically and do not run any deploy command on the user's behalf.
 
 ## Handoff card
+
+**Create the destination directory before printing the card.** Never ask the user to drop
+files into a folder that does not exist; make `input/`, `input/keyframes/` and
+`input/clips/` as needed first, so the path in the card is real and openable the moment
+they read it.
 
 Use this exact shape for every manual handoff, one card per request, then end the
 turn â€” do not poll, re-check the folder, or keep working after printing it:

@@ -115,10 +115,18 @@ export function frameFilename(index, pattern) {
 export function overlayOpacity(progress, range, fade) {
   const [start, end] = range;
   const width = end - start;
+  if (width <= 0) return 0;
   const ramp = fade ?? Math.min(0.05, width / 2);
-  if (progress <= start || progress >= end || width <= 0) return 0;
+  // An overlay reaching the very start/end persists at that extreme (e.g. a
+  // terminal CTA held on the final frame) instead of fading out into dead space.
+  const persistStart = start <= 0;
+  const persistEnd = end >= 1;
+  if (progress <= start && !persistStart) return 0;
+  if (progress >= end && !persistEnd) return 0;
   if (ramp <= 0) return 1;
-  return clamp(Math.min((progress - start) / ramp, (end - progress) / ramp), 0, 1);
+  const rampIn = persistStart ? 1 : (progress - start) / ramp;
+  const rampOut = persistEnd ? 1 : (end - progress) / ramp;
+  return clamp(Math.min(rampIn, rampOut), 0, 1);
 }
 
 export function holdFrames(holds, frameCount) {

@@ -121,6 +121,7 @@ function applyTheme(config) {
   root.setProperty('--surface', theme.surface);
   root.setProperty('--radius', theme.radius + 'px');
   root.setProperty('--border-style', theme.borderStyle ?? 'solid');
+  root.setProperty('--display-scale', String(theme.displayScale ?? 1));
   if (theme.fonts?.display) root.setProperty('--display', theme.fonts.display);
   if (theme.fonts?.body) root.setProperty('--body', theme.fonts.body);
   if (theme.fonts?.mono) root.setProperty('--mono', theme.fonts.mono);

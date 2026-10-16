@@ -1,4 +1,4 @@
-import {
+﻿import {
   mkdir,
   mkdtemp,
   readFile,
@@ -247,6 +247,35 @@ describe('assembleConfig direction presets', () => {
     expect(config.theme.fonts.mono).toBe('Explicit Mono');
   });
 
+  it('lets values.json override individual preset knobs', () => {
+    const { config } = assembleConfig(defaults, {
+      brand: { name: 'D' },
+      direction: 'cinematic',
+      directionPreset: { scrimStrength: 0, chromeStyle: 'quiet' },
+    }, frameSet, null);
+    expect(config.directionPreset.scrimStrength).toBe(0);
+    expect(config.directionPreset.chromeStyle).toBe('quiet');
+    // Un-overridden knobs still come from the preset.
+    expect(config.directionPreset.motion.ease).toBe('cubic-bezier(0.4, 0, 0.2, 1)');
+  });
+
+  it('never inherits the demo overlays or outro when values.json omits them', () => {
+    const demo = {
+      ...defaults,
+      overlays: [{ at: [0.1, 0.2], title: 'Form follows light' }],
+      outro: { headline: 'Made to move with you', cta: { label: 'Buy Aster', href: '#buy' } },
+    };
+    const { config } = assembleConfig(demo, { brand: { name: 'D' } }, frameSet, null);
+    expect(config.overlays).toBeUndefined();
+    expect(config.outro).toBeUndefined();
+
+    // An explicit value is still honoured.
+    const explicit = assembleConfig(
+      demo, { brand: { name: 'D' }, outro: { headline: 'Ours' } }, frameSet, null,
+    ).config;
+    expect(explicit.outro).toEqual({ headline: 'Ours' });
+  });
+
   it('is unchanged when no direction is given', () => {
     const { config } = assembleConfig(defaults, { brand: { name: 'D' } }, frameSet, null);
     expect(config.theme.accent).toBe('#00ff00');
@@ -322,6 +351,66 @@ describe('assembleConfig video mode', () => {
     const { config } = assembleConfig(defaults(), {}, null, { duration: 7.8 });
     expect(config.video.duration).toBe(7.8);
     expect(config.frames).toBeUndefined();
+  });
+});
+
+describe('scaffoldProject template isolation', () => {
+  it('vendors the template per project so one project never affects another', async () => {
+    const shared = await makeTemplateDir();
+    await writeFile(join(shared, 'style.css'), 'body{--SHARED:1}', 'utf8');
+    const projectA = await makeProjectDir();
+    const projectB = await makeProjectDir();
+    for (const dir of [projectA, projectB]) {
+      await seedFreshFrames(dir, ['frame-0001.webp', 'frame-0002.webp']);
+      await writeValues(dir, creativeValues);
+      await scaffoldProject({
+        projectDir: dir, valuesPath: join(dir, 'values.json'), templateDir: shared,
+      });
+    }
+
+    // A edits its own vendored source, the way a project with strong art
+    // direction would, then rebuilds.
+    await writeFile(join(projectA, 'template', 'style.css'), 'body{--A-ONLY:1}', 'utf8');
+    await seedFreshFrames(projectA, ['frame-0001.webp', 'frame-0002.webp']);
+    await scaffoldProject({
+      projectDir: projectA,
+      valuesPath: join(projectA, 'values.json'),
+      templateDir: shared,
+      force: true,
+    });
+    expect(await readFile(join(projectA, 'site', 'style.css'), 'utf8')).toBe('body{--A-ONLY:1}');
+
+    // B rebuilds from the same shared source and is untouched by A's edit.
+    await seedFreshFrames(projectB, ['frame-0001.webp', 'frame-0002.webp']);
+    await scaffoldProject({
+      projectDir: projectB,
+      valuesPath: join(projectB, 'values.json'),
+      templateDir: shared,
+      force: true,
+    });
+    expect(await readFile(join(projectB, 'site', 'style.css'), 'utf8')).not.toContain('--A-ONLY');
+  });
+
+  it('gives each project its own direction presets', async () => {
+    const shared = await makeTemplateDir();
+    const projectDir = await makeProjectDir();
+    await seedFreshFrames(projectDir, ['frame-0001.webp', 'frame-0002.webp']);
+    await writeValues(projectDir, { ...creativeValues, direction: 'cinematic' });
+    await scaffoldProject({
+      projectDir, valuesPath: join(projectDir, 'values.json'), templateDir: shared,
+    });
+
+    // Retune this project's own cinematic preset; the shared file is untouched.
+    const own = JSON.parse(await readFile(join(projectDir, 'directions.json'), 'utf8'));
+    own.cinematic.scrimStrength = 0.01;
+    await writeFile(join(projectDir, 'directions.json'), JSON.stringify(own), 'utf8');
+
+    await seedFreshFrames(projectDir, ['frame-0001.webp', 'frame-0002.webp']);
+    await scaffoldProject({
+      projectDir, valuesPath: join(projectDir, 'values.json'), templateDir: shared, force: true,
+    });
+    const config = JSON.parse(await readFile(join(projectDir, 'site', 'config.json'), 'utf8'));
+    expect(config.directionPreset.scrimStrength).toBe(0.01);
   });
 });
 
