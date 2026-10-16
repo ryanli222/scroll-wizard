@@ -10,6 +10,14 @@ scripts, a static site template, and a scrub engine (`template/scrub-core.js`
 + `template/scrub-engine.js`) with an optional [Lenis](#license) smooth-scroll
 layer.
 
+## Demo
+
+[![KYNEXA demo: a scroll-scrub site generated with scroll-wizard](docs/demo/kynexa-poster.webp)](docs/demo/kynexa-demo.mp4)
+
+**[Live demo](https://kynexa-demo.vercel.app)** (opens the generated KYNEXA site; click the image above for a
+recording). The live page is for scrolling only: its buttons and links are
+not functional.
+
 ## Prerequisites
 
 - Node 20 or later — `node --version`
