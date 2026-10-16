@@ -18,6 +18,10 @@ layer.
 recording). The live page is for scrolling only: its buttons and links are
 not functional.
 
+The demo video was generated with Google Veo 3.1 Lite, the cheapest Veo model
+at the time. Stronger video models such as Seedance should give noticeably
+higher-quality results with the same workflow.
+
 ## Prerequisites
 
 - Node 20 or later — `node --version`
