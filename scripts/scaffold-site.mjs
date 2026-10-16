@@ -81,7 +81,7 @@ export async function inspectFrameSet(directory) {
   };
 }
 
-export function assembleConfig(defaults, values, frameSet, mediaSet = null) {
+export function assembleConfig(defaults, values, frameSet, mediaSet = null, directions = DIRECTIONS) {
   const videoMode = values.scrub?.mode === 'video'
     || (values.scrub?.mode == null && mediaSet !== null);
   const posterIndex = values.posterIndex ?? 1;
@@ -91,7 +91,7 @@ export function assembleConfig(defaults, values, frameSet, mediaSet = null) {
   }
   const { posterIndex: _ignored, ...creative } = values;
   const brand = { ...defaults.brand, ...creative.brand };
-  const selectedDirection = DIRECTIONS[creative.direction];
+  const selectedDirection = directions[creative.direction];
   // Clarification: poster alt falls back imageAlt -> tagline -> "<name> hero scene".
   brand.imageAlt = brand.imageAlt || brand.tagline || (brand.name + ' hero scene');
   const config = {
@@ -113,16 +113,25 @@ export function assembleConfig(defaults, values, frameSet, mediaSet = null) {
   if (!Object.hasOwn(creative, 'sections')) delete config.sections;
   if (!Object.hasOwn(creative, 'hotspots')) delete config.hotspots;
   if (!Object.hasOwn(creative, 'config')) delete config.config;
+  // The shipped template/config.json is a working demo, not a set of blanks. An
+  // omitted field must mean "absent", never "inherit the demo product" — without
+  // this a project with no outro shipped the demo's "Buy Aster" CTA.
+  if (!Object.hasOwn(creative, 'overlays')) delete config.overlays;
+  if (!Object.hasOwn(creative, 'outro')) delete config.outro;
   if (creative.scrub?.jump === undefined) delete config.scrub.jump;
   // The demo template/config.json ships a `direction`; without this a legacy
   // values file (no direction) would inherit it via `...defaults` but get no
   // serialized preset, hard-failing the runtime and skewing section synthesis.
   if (!Object.hasOwn(creative, 'direction')) delete config.direction;
   if (selectedDirection) {
+    // A direction is a starting package, not a straitjacket: values.json may
+    // override any individual knob (e.g. a monochrome build that wants the
+    // cinematic ease but none of its scrim).
+    const override = creative.directionPreset ?? {};
     config.directionPreset = {
-      motion: { ...selectedDirection.motion },
-      chromeStyle: selectedDirection.chromeStyle,
-      scrimStrength: selectedDirection.scrimStrength,
+      motion: { ...selectedDirection.motion, ...override.motion },
+      chromeStyle: override.chromeStyle ?? selectedDirection.chromeStyle,
+      scrimStrength: override.scrimStrength ?? selectedDirection.scrimStrength,
     };
   } else {
     delete config.directionPreset;
@@ -292,12 +301,35 @@ export async function scaffoldProject(options) {
     fileOperations = {},
   } = options;
   const projectDir = resolve(options.projectDir);
-  const templateDir = resolve(options.templateDir ?? DEFAULT_TEMPLATE_DIR);
+  const sourceTemplateDir = resolve(options.templateDir ?? DEFAULT_TEMPLATE_DIR);
   const sitePath = join(projectDir, 'site');
   const projectFramesPath = join(projectDir, 'frames');
   const projectMediaPath = join(projectDir, 'media');
 
   await recoverInterruptedRun(projectDir, io);
+
+  // Full project isolation: on first scaffold the project takes its own copy of
+  // the template source and the direction presets, and builds from those forever
+  // after. Editing one project's design can then never reach another, and shared
+  // template edits only ever reach projects that have not been scaffolded yet.
+  const templateDir = join(projectDir, 'template');
+  const directionsPath = join(projectDir, 'directions.json');
+  let vendoredTemplate = false;
+  let vendoredDirections = false;
+  if (!await pathExists(templateDir)) {
+    await mkdir(projectDir, { recursive: true });
+    await cp(sourceTemplateDir, templateDir, { recursive: true });
+    vendoredTemplate = true;
+    io.log?.('Vendored template into ' + templateDir + ' (this project now owns its design source).');
+  }
+  if (!await pathExists(directionsPath)) {
+    await cp(
+      fileURLToPath(new URL('../references/directions.json', import.meta.url)),
+      directionsPath,
+    );
+    vendoredDirections = true;
+  }
+  const directions = JSON.parse(await readFile(directionsPath, 'utf8'));
 
   const siteExisted = await pathExists(sitePath);
   if (siteExisted && !force) {
@@ -380,8 +412,20 @@ export async function scaffoldProject(options) {
       await cp(liveFontsPath, join(siteTmpPath, 'fonts'), { recursive: true });
     }
 
-    const { config, warnings } = assembleConfig(defaults, values, frameSet, mediaSet);
+    const { config, warnings } = assembleConfig(defaults, values, frameSet, mediaSet, directions);
     await writeJsonAtomic(join(siteTmpPath, 'config.json'), config);
+
+    // Set the browser-tab title from brand; template ships a generic placeholder.
+    const brandName = config.brand?.name?.trim();
+    if (brandName) {
+      const titleText = config.brand?.tagline
+        ? brandName + ' — ' + config.brand.tagline
+        : brandName;
+      const esc = titleText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const indexTmpPath = join(siteTmpPath, 'index.html');
+      const html = await readFile(indexTmpPath, 'utf8');
+      await writeFile(indexTmpPath, html.replace(/<title>[^<]*<\/title>/, '<title>' + esc + '</title>'), 'utf8');
+    }
 
     const displayFile = config.theme.fonts?.displayFile;
     if (displayFile && !await pathExists(join(siteTmpPath, displayFile))) {
@@ -444,6 +488,14 @@ export async function scaffoldProject(options) {
       await rm(siteTmpPath, { recursive: true, force: true }).catch(() => {});
     }
     await rm(readmeTmpPath, { recursive: true, force: true }).catch(() => {});
+    // A failed scaffold leaves nothing behind, vendored copies included — only
+    // remove what this run created, never a copy the project already owned.
+    if (vendoredTemplate) {
+      await rm(templateDir, { recursive: true, force: true }).catch(() => {});
+    }
+    if (vendoredDirections) {
+      await rm(directionsPath, { force: true }).catch(() => {});
+    }
     throw reportedError;
   }
 }

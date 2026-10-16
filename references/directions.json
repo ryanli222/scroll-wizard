@@ -20,7 +20,7 @@
       "revealTravelPx": 16
     },
     "chromeStyle": "quiet",
-    "scrimStrength": 0.5
+    "scrimStrength": 0.12
   },
   "cinematic": {
     "theme": {

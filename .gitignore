@@ -7,3 +7,14 @@ coverage/
 .scroll-wizard-*
 site.tmp*/
 site.old*/
+# Screen recordings of third-party reference sites: review aids, not assets.
+*/reference/*.mp4
+*/reference/*.webm
+
+# Local tooling and generated example projects (kept on disk, not part of the package)
+.agents/
+.claude/
+.codex/
+.cursor/
+skills-lock.json
+robots/

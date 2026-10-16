@@ -13,6 +13,8 @@
   --spring-bounce: 0;
   --reveal-travel: 16px;
   --scrim-strength: .5;
+  /* Multiplies the oversized display sizes only; 1 keeps stock proportions. */
+  --display-scale: 1;
 }
 
 * { box-sizing: border-box; }
@@ -92,7 +94,9 @@ a:focus-visible {
 .overlay__content {
   position: relative;
   isolation: isolate;
-  width: min(34rem, 100%);
+  /* Measure tracks the display scale: scaling type up without widening the
+     column would just wrap oversized headlines into a narrow ribbon. */
+  width: min(calc(34rem * var(--display-scale)), 100%);
   max-width: 100%;
   padding-bottom: 1px;
   color: var(--text);
@@ -125,18 +129,18 @@ a:focus-visible {
 
 /* Variants: bare is the unframed default; panel is the sole glass surface. */
 .overlay--hero .overlay__content {
-  width: min(60rem, 100%);
+  width: min(calc(60rem * var(--display-scale)), 100%);
   text-align: center;
 }
 .overlay--hero .overlay__title {
-  font-size: clamp(2.75rem, 8vw, 6rem);
+  font-size: calc(clamp(2.75rem, 8vw, 6rem) * var(--display-scale));
   letter-spacing: -.03em;
 }
 .overlay--hero .overlay__body { max-width: 46ch; margin-inline: auto; }
 .overlay--caption .overlay__content { width: min(22rem, 100%); }
 .overlay--caption .overlay__title { font-size: clamp(1rem, 2vw, 1.4rem); }
 .overlay--metric .overlay__title {
-  font-size: clamp(3rem, 10vw, 6rem);
+  font-size: calc(clamp(3rem, 10vw, 6rem) * var(--display-scale));
   line-height: .95;
 }
 .overlay--panel .overlay__content {
@@ -278,8 +282,33 @@ a:focus-visible {
 .dir-cinematic .overlay__kicker,
 .dir-cinematic .overlay__index,
 .dir-cinematic .stat__value { color: var(--muted); }
-.dir-cinematic .overlay__cta,
-.dir-cinematic .outro__cta { background: var(--text); color: var(--bg); }
+/* A filled CTA is chrome, not direction identity: keyed on chromeStyle so a
+   values.json override to "quiet" yields a plain editorial text link.
+   meta-strip is cinematic's default, so stock cinematic is unchanged. */
+body[data-chrome-style="meta-strip"] .overlay__cta,
+body[data-chrome-style="meta-strip"] .outro__cta { background: var(--text); color: var(--bg); }
+
+/* Editorial chrome: CTAs are text with a rule, never filled controls. Hit
+   areas stay 44px — the fill goes, the touch target does not. */
+body[data-chrome-style="editorial"] .section-accent-rule { display: none; }
+body[data-chrome-style="editorial"] .overlay__cta,
+body[data-chrome-style="editorial"] .outro__cta,
+body[data-chrome-style="editorial"] .section-cta {
+  padding-inline: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-weight: 400;
+  letter-spacing: .04em;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 35%, transparent);
+  transition: border-bottom-color 200ms var(--ease), opacity 200ms var(--ease);
+}
+body[data-chrome-style="editorial"] .overlay__cta:hover,
+body[data-chrome-style="editorial"] .outro__cta:hover,
+body[data-chrome-style="editorial"] .section-cta:hover {
+  border-bottom-color: var(--text);
+  opacity: 1;
+}
 .dir-cinematic .progress-bar { background: var(--text); }
 .dir-technical .overlay__index { color: var(--accent); }
 .dir-technical .overlay__kicker { color: var(--muted); }
@@ -290,6 +319,64 @@ a:focus-visible {
 .dir-bold .overlay__index,
 .dir-bold .stat__value { color: var(--accent); }
 .dir-bold .overlay__title { font-weight: 800; }
+/* Minimal: refined editorial serif — regular weight, natural tracking, generous leading. */
+.dir-minimal .overlay__title {
+  font-size: clamp(1.6rem, 2.8vw, 2.4rem);
+  font-weight: 400;
+  line-height: 1.16;
+  letter-spacing: 0;
+  margin-bottom: 1rem;
+}
+.dir-minimal .overlay__body {
+  max-width: 30ch;
+  font-family: var(--display);
+  font-size: clamp(.95rem, 1.05vw, 1.05rem);
+  line-height: 1.62;
+  color: var(--text);
+}
+.dir-minimal .overlay__kicker {
+  margin-bottom: 1.15rem;
+  font-family: var(--display);
+  font-size: .8rem;
+  font-weight: 500;
+  letter-spacing: .28em;
+  color: var(--text);
+}
+/* Minimal CTA: plain underlined text link, not a filled pill. 44px tap height kept. */
+.dir-minimal .overlay__cta {
+  min-width: 0;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-family: var(--display);
+  font-size: 1.05rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+  text-decoration-thickness: 1px;
+}
+/* First two holds: edge-anchored veil that fades toward the frame centre, not a box. */
+.dir-minimal .overlay--left .overlay__content::before {
+  inset: -1rem -6.5rem -1rem -3rem;
+  box-shadow: none;
+  background: linear-gradient(to right,
+    rgb(from var(--bg) r g b / var(--scrim-strength)),
+    rgb(from var(--bg) r g b / calc(var(--scrim-strength) * .5)) 45%,
+    transparent);
+}
+.dir-minimal .overlay--right .overlay__content::before {
+  inset: -1rem -3rem -1rem -6.5rem;
+  box-shadow: none;
+  background: linear-gradient(to left,
+    rgb(from var(--bg) r g b / var(--scrim-strength)),
+    rgb(from var(--bg) r g b / calc(var(--scrim-strength) * .5)) 45%,
+    transparent);
+}
+/* Practice sits hard right and reads right-aligned. */
+.dir-minimal .overlay--right .overlay__content { text-align: right; }
+.dir-minimal .overlay--right .overlay__body { margin-left: auto; }
 
 .loader {
   position: absolute;
@@ -328,12 +415,21 @@ a:focus-visible {
 }
 .outro__body { margin: 0 0 2rem; font-size: clamp(1rem, 1.6vw, 1.35rem); opacity: 1; }
 .footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
   padding: 1rem;
   text-align: center;
-  font-size: .8rem;
-  letter-spacing: .04em;
+  font-family: var(--display);
+  font-size: .68rem;
+  letter-spacing: .08em;
   text-transform: uppercase;
-  opacity: .6;
+  color: var(--text);
+  opacity: .85;
+  pointer-events: none;
+  text-shadow: 0 1px 16px color-mix(in srgb, var(--bg) 70%, transparent);
 }
 h1, h2, h3 { font-family: var(--display); }
 
@@ -434,13 +530,13 @@ h1, h2, h3 { font-family: var(--display); }
 .section-title, .section-copy, .section-statement, .section-hint, .section-eyebrow { overflow-wrap: anywhere; }
 .section-eyebrow, .section-hint { color: var(--muted); font-family: var(--mono); letter-spacing: .12em; text-transform: uppercase; }
 .section-masthead { max-width: 52rem; }
-.section-masthead .section-title, .site-section--cta .section-title { margin: 0; font-size: clamp(3rem, 9vw, 7rem); line-height: .94; }
+.section-masthead .section-title, .site-section--cta .section-title { margin: 0; font-size: calc(clamp(3rem, 9vw, 7rem) * var(--display-scale)); line-height: .94; }
 .section-copy { max-width: 58ch; font-size: clamp(1rem, 2vw, 1.25rem); line-height: 1.6; }
 .site-section--feature-split .site-section__inner { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(2rem, 6vw, 7rem); align-items: center; }
 .site-section--feature-split[data-side="right"] .section-feature__media { order: 2; }
 .section-feature__media { margin: 0; min-width: 0; }
 .section-feature__image, .section-feature__video, .section-gallery__image { display: block; width: 100%; max-width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius); }
-.section-statement { max-width: 22ch; margin: 0; font-family: var(--display); font-size: clamp(2.5rem, 7vw, 6rem); line-height: 1; }
+.section-statement { max-width: 22ch; margin: 0; font-family: var(--display); font-size: calc(clamp(2.5rem, 7vw, 6rem) * var(--display-scale)); line-height: 1; }
 .section-spec__list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 1px; margin: 2rem 0 0; background: color-mix(in srgb, var(--text) 15%, transparent); }
 .section-spec__row { display: grid; gap: .5rem; padding: 1.25rem; background: var(--bg); }
 .section-spec__row dt { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; }
